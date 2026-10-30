@@ -43388,6 +43388,7 @@ function _6Q(_bi, _ci) {
 }
 function _gx(_bi, _ci) {
 	{
+		if (!window.RetroExhibition) {
 		var _QO = _dq(31);
 		var _RO = _jj(_bi, _ci, 64)._Ip;
 		{
@@ -43397,6 +43398,7 @@ function _gx(_bi, _ci) {
 		}
 		_jj(_bi, _ci, 64)._Fj[_Gt(1)] = _zi(_jj(_bi, _ci, 64)._Ej, _RO);
 		_jj(_bi, _ci, 64)._5Q = 1;
+		}
 		var _8Q = _Ai(_jj(_bi, _ci, 64)._Fj[_7v(0, _jj(_bi, _ci, 64)._Fj)], 'colhelmet');
 		var _9Q = _Ai(_jj(_bi, _ci, 64)._Fj[_7v(0, _jj(_bi, _ci, 64)._Fj)], 'colshirt');
 		var _aQ = _Ai(_jj(_bi, _ci, 64)._Fj[_7v(0, _jj(_bi, _ci, 64)._Fj)], 'colpants');
