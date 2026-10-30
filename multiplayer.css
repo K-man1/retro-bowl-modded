@@ -1,0 +1,28 @@
+#online-open,#online-panel{font-family:"Press Start 2P",monospace;color:#fff;font-size:10px}
+#online-open{position:fixed;left:12px;top:12px;z-index:10002;padding:12px;background:#1a4fd6;border:3px solid #fff;cursor:pointer}
+#online-panel{position:fixed;inset:0;z-index:10060;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;gap:14px}
+#online-panel[hidden],#online-panel [hidden]{display:none!important}
+#online-panel h1{font-size:15px;line-height:1.6;margin:0 0 16px}
+#online-lobby{width:min(580px,100%);max-height:calc(100vh - 100px);overflow:auto;background:#1a4fd6;border:3px solid #fff;padding:24px;box-sizing:border-box}
+#online-panel button,#online-panel input,#online-panel select{font:inherit;color:#fff;background:#163db0;border:2px solid #fff;padding:12px;box-sizing:border-box}
+#online-panel button{cursor:pointer;line-height:1.6}
+#online-panel button:disabled{opacity:.5;cursor:default}
+#online-panel input,#online-panel select{width:100%;margin:8px 0 16px}
+#online-panel label{display:block;line-height:1.8;margin-top:12px}
+#online-panel p{font-size:9px;line-height:1.9}
+#online-panel .online-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#online-panel .online-row>*{flex:1}
+#online-room-code{font-size:21px;letter-spacing:4px;margin:18px 0}
+#online-players{padding:12px 0;border-top:2px solid #fff;border-bottom:2px solid #fff;margin:12px 0}
+#online-status{max-width:650px;font-size:9px;line-height:1.8;text-align:center;margin:0;min-height:18px}
+#online-frame{width:100%;height:100%;border:0;position:absolute;inset:0;z-index:0;background:#000}
+#online-matchbar{position:absolute;z-index:2;top:0;left:0;right:0;background:#163db0;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;box-sizing:border-box;font-size:8px;line-height:1.7}
+#online-matchbar button{font-size:8px;padding:5px 8px}
+#online-panel.playing{padding:0}
+#online-panel.playing #online-frame{top:48px;height:calc(100% - 88px)}
+#online-panel.playing #online-status{position:absolute;bottom:8px;left:12px;right:12px;z-index:2;background:rgba(0,0,0,.8);padding:5px;pointer-events:none;margin:auto}
+#online-choice{position:absolute;z-index:3;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a4fd6;border:3px solid #fff;padding:24px;width:min(480px,90%);box-sizing:border-box;text-align:center}
+#online-choice p{white-space:pre-line}
+#online-finish{position:absolute;z-index:4;background:#1a4fd6;border:3px solid #fff;padding:24px;max-width:480px;text-align:center}
+#online-invite{font-size:8px!important}
+@media(max-width:700px){#online-open{font-size:8px;left:8px;top:8px;padding:10px}#online-panel{font-size:9px}#online-lobby{padding:16px}#online-matchbar{font-size:7px}}

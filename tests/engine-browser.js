@@ -2,12 +2,38 @@
   var output = document.getElementById("checks");
   var before = JSON.stringify(Object.assign({}, localStorage));
   var checks = [];
+  var mirrorFrame;
+  var hostSnapshot;
+  var hostTeams;
   function check(condition, message) {
     if (!condition) throw new Error(message);
     checks.push("PASS " + message);
     output.textContent = checks.join("\n");
   }
   window.addEventListener("message", function (event) {
+    if (event.data.type === "error") output.textContent += "\nENGINE ERROR " + event.data.message;
+    if (event.source === document.getElementById("game").contentWindow && event.data.type === "catalog") hostTeams = event.data.teams;
+    if (mirrorFrame && event.source === mirrorFrame.contentWindow) {
+      if (event.data.type === "catalog") mirrorFrame.contentWindow.postMessage({ source: "retro-lobby", type: "start", player: 1, teams: hostTeams.slice(0, 2).map(function (team) { return { team: team, roster: [] }; }), settings: { difficulty: 2, minutes: 1 } }, location.origin);
+      if (event.data.type === "started") {
+        try {
+          var mirrorEngine = mirrorFrame.contentWindow.ExhibitionEngine;
+          mirrorEngine.applySnapshot(mirrorFrame.contentWindow.JSON.parse(JSON.stringify(hostSnapshot)));
+          check(mirrorEngine.instances(74).length === 11 && mirrorEngine.instances(75).length === 11, "Recreate the host's field on a separate client");
+          check(mirrorEngine.match()._Sb1[0] === hostSnapshot.score[0] && mirrorEngine.match()._Sb1[1] === hostSnapshot.score[1], "Mirror authoritative scoring");
+          check(mirrorEngine.match()._UD === hostSnapshot.possession, "Mirror authoritative possession");
+          var x = mirrorEngine.instances(74)[0].x;
+          setTimeout(function () {
+            try {
+              check(mirrorEngine.instances(74)[0].x === x, "Guest rendering does not run local physics");
+              checks.push("Engine and rendering checks passed");
+              output.textContent = checks.join("\n");
+            } catch (error) { output.textContent += "\nFAIL " + error.stack; }
+          }, 1000);
+        } catch (error) { output.textContent += "\nFAIL " + error.stack; }
+      }
+      return;
+    }
     if (event.source !== document.getElementById("game").contentWindow || event.data.type !== "started") return;
     var gameWindow = event.source;
     var engine = gameWindow.ExhibitionEngine;
@@ -39,12 +65,18 @@
       var score = game._Sb1[game._UD];
       gameWindow._hB(game, game, 1);
       check(game._Sb1[game._UD] === score + 6, "Score a touchdown using engine rules");
+      gameWindow._eb1(game, game, 1);
+      hostSnapshot = engine.captureSnapshot();
+      check(hostSnapshot.entities.length >= 23 && hostSnapshot.camera.length === 4, "Capture native entities and camera");
       gameWindow._1d1(game, game, 1);
       check(JSON.stringify(Object.assign({}, localStorage)) === before, "Leave browser career saves unchanged");
-      checks.push("Engine milestone passed");
-      output.textContent = checks.join("\n");
+      mirrorFrame = document.createElement("iframe");
+      mirrorFrame.src = "../multiplayer-frame.html";
+      mirrorFrame.width = 960;
+      mirrorFrame.height = 540;
+      document.body.appendChild(mirrorFrame);
     } catch (error) {
-      output.textContent = checks.join("\n") + "\nFAIL " + error.stack;
+      output.textContent = checks.join("\n") + "\nFAIL " + (error.stack || String(error));
     }
   });
 })();
