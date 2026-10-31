@@ -105,6 +105,12 @@ test("preserve short pointer clicks and reject invalid pointer actions", () => {
   }
 });
 
+test("relay offensive taps separately from held defensive directions", () => {
+  const input = { seq: 1, keys: [], pointer: { x: 0.5, y: 0.5, down: false }, actions: [{ id: 1, type: "key", code: 87 }] };
+  assert.deepEqual(protocol.input(input).actions, input.actions);
+  for (const code of [32, 81, 999, "87"]) assert.throws(() => protocol.input({ ...input, actions: [{ ...input.actions[0], code }] }), /key/);
+});
+
 test("sequence inputs and actions, restrict snapshot publishing, isolate rooms", async t => {
   const f = await fixture(t);
   const pair = await f.pair();

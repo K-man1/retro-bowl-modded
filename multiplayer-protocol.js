@@ -53,7 +53,8 @@
     var actions = candidate.actions || [];
     if (!Array.isArray(actions) || actions.length > 12) throw new Error("Too many actions.");
     actions.forEach(function (action) {
-      if (!action || !Number.isSafeInteger(action.id) || action.id < 0 || !["switch", "space", "choice", "audible", "timeout", "pointer"].includes(action.type)) throw new Error("Invalid player action.");
+      if (!action || !Number.isSafeInteger(action.id) || action.id < 0 || !["switch", "space", "choice", "audible", "timeout", "pointer", "key"].includes(action.type)) throw new Error("Invalid player action.");
+      if (action.type === "key" && (!keys.includes(action.code) || action.code === 32)) throw new Error("Invalid key action.");
       if (action.type === "choice" && (!Number.isSafeInteger(action.prompt) || ![0, 1].includes(action.choice))) throw new Error("Invalid choice.");
       if (action.type === "pointer" && (typeof action.down !== "boolean" || !Number.isFinite(action.x) || !Number.isFinite(action.y) || action.x < 0 || action.x > 1 || action.y < 0 || action.y > 1)) throw new Error("Invalid pointer action.");
     });

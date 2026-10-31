@@ -33,6 +33,8 @@
   var inputs = [emptyInput(), emptyInput()];
   var actionQueues = [[], []];
   var pointerEdges = [[], []];
+  var keyPresses = [[], []];
+  var framePressed = new Set();
   var lastInputAt = [0, 0];
   var localPlayer = 0;
   var onEvent = function (event) { parent.postMessage(Object.assign({ source: "retro-exhibition" }, event), location.origin); };
@@ -109,6 +111,8 @@
     inputs = [emptyInput(), emptyInput()];
     actionQueues = [[], []];
     pointerEdges = [[], []];
+    keyPresses = [[], []];
+    framePressed.clear();
     lastMouseDown = false;
     mouseReleased = false;
   }
@@ -203,6 +207,8 @@
       input.actions.forEach(function (action) {
         if (action.type === "pointer") {
           if (sceneReady && side === match()._UD) pointerEdges[side].push(action);
+        } else if (action.type === "key") {
+          if (sceneReady && side === match()._UD) keyPresses[side].push(action.code);
         } else actionQueues[side].push(action);
       });
     }
@@ -466,7 +472,9 @@
       return aim.apply(window, arguments);
     };
     var nativeKey = window._b81;
-    window._b81 = function (code) { return running && sceneReady ? offensiveInput().keys.includes(code) : nativeKey(code); };
+    window._b81 = function (code) { return running && sceneReady ? framePressed.has(code) : nativeKey(code); };
+    var nativeHeld = window._jI1;
+    window._jI1 = function (code) { return running && sceneReady ? offensiveInput().keys.includes(code) : nativeHeld(code); };
     var nativeDown = window._q01;
     window._q01 = function (button) { return running && sceneReady ? button === 1 && offensiveInput().pointer.down : nativeDown(button); };
     var nativeRelease = window._l11;
@@ -479,6 +487,11 @@
     var nativeWorldY = window._O53;
     window._N53 = function () { var view = running && sceneReady ? camera() : null; return view ? view[0] + offensiveInput().pointer.x * view[2] : nativeWorldX(); };
     window._O53 = function () { var view = running && sceneReady ? camera() : null; return view ? view[1] + offensiveInput().pointer.y * view[3] : nativeWorldY(); };
+    var drawTiledSprite = window._SI1;
+    window._SI1 = function (instance, sprite) {
+      if (running && sprite === 149) return;
+      return drawTiledSprite.apply(window, arguments);
+    };
     var drawSprite = window._mh1;
     window._mh1 = function (instance, sprite) {
       var defenderId = mode === "guest" && mirror.has(selectedDefender) ? mirror.get(selectedDefender).id : selectedDefender;
@@ -494,6 +507,9 @@
           window._Sc2._Ch2();
           return;
         }
+        framePressed.clear();
+        var taps = keyPresses[match()._UD];
+        while (taps.length && !framePressed.has(taps[0])) framePressed.add(taps.shift());
         // A click can begin and end between two network packets. Present each edge to the engine.
         var edge = pointerEdges[match()._UD].shift();
         if (edge) inputs[match()._UD].pointer = { x: edge.x, y: edge.y, down: edge.down };
@@ -501,12 +517,14 @@
         lastMouseDown = offensiveInput().pointer.down;
         if (!paused && !finished) handleActions();
         if (paused || finished || prompt) {
+          framePressed.clear();
           window._Sc2._D35();
           window._Sc2._Ch2();
           return;
         }
       }
-      return update.apply(window, arguments);
+      try { return update.apply(window, arguments); }
+      finally { framePressed.clear(); }
     };
   }
 
@@ -541,6 +559,8 @@
       inputs = [{ keys: [], pointer: { x: 0.5, y: 0.5, down: false } }, { keys: [], pointer: { x: 0.5, y: 0.5, down: false } }];
       actionQueues = [[], []];
       pointerEdges = [[], []];
+      keyPresses = [[], []];
+      framePressed.clear();
       lastMouseDown = false;
       mouseReleased = false;
       localActions = [];
@@ -562,6 +582,7 @@
       var code = event.keyCode;
       if (type === "keydown") {
         if ([87, 65, 83, 68, 37, 38, 39, 40, 32].includes(code)) pressed.add(code);
+        if (!event.repeat && [87, 65, 83, 68, 37, 38, 39, 40].includes(code)) localActions.push({ id: actionId++, type: "key", code: code });
         if (!event.repeat && [32, 81].includes(code)) localActions.push({ id: actionId++, type: code === 81 ? "switch" : "space" });
       } else pressed.delete(code);
     }, true);
