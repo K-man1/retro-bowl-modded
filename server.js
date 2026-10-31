@@ -132,12 +132,16 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
           const seat = room?.players.findIndex(player => player && player.token === message.token);
           if (!room || seat === -1) { send(socket, { type: "ended", reason: "Your room expired. Create or join a new room." }); return; }
           const player = room.players[seat];
-          if (player.socket) throw new Error("This player is already connected.");
           socket.compactSnapshots = message.snapshotFormat === "delta";
           if (seat === 0 && room.phase === "playing" && !message.hasSimulation) {
             const reason = "The host reloaded. Create a new match.";
             send(socket, { type: "ended", reason });
             destroyRoom(room, reason); return;
+          }
+          if (player.socket) {
+            player.socket.room = null;
+            player.socket.seat = null;
+            player.socket.close(4001, "Player reconnected");
           }
           clearTimeout(player.expiry);
           player.socket = socket;

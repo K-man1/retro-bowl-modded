@@ -178,6 +178,27 @@ test("relay compact updates and restore a complete match after a skipped frame",
   assert.deepEqual(protocol.restoreSnapshot((await reconnect.next("snapshot")).snapshot, next), last);
 });
 
+test("a valid reconnect replaces a stale socket without pausing the match", async t => {
+  const f = await fixture(t);
+  const pair = await f.pair("delta");
+  const started = await f.start(pair);
+  pair.host.messages.length = 0;
+  const oldConnectionClosed = once(pair.guest.socket, "close");
+  const reconnect = await f.connect();
+  reconnect.send({ type: "resume", code: pair.joined.code, token: pair.guestJoined.token, snapshotFormat: "delta" });
+  assert.equal((await reconnect.next("joined")).resumed, true);
+  assert.equal((await oldConnectionClosed)[0], 4001);
+  assert.equal((await pair.host.next("room")).paused, false);
+  assert.equal(pair.host.messages.some(message => message.type === "pause"), false);
+  const snapshot = { tick: 1, entities: [], score: [0, 0], possession: 0 };
+  pair.host.send({ type: "snapshot", matchId: started.matchId, snapshot });
+  assert.deepEqual((await reconnect.next("snapshot")).snapshot, snapshot);
+  const intruder = await f.connect();
+  intruder.send({ type: "resume", code: pair.joined.code, token: "wrong-token", snapshotFormat: "delta" });
+  assert.match((await intruder.next("ended")).reason, /expired/);
+  assert.equal(reconnect.socket.readyState, WebSocket.OPEN);
+});
+
 test("disconnect timeout, host refresh and server restart end matches explicitly", async t => {
   const f = await fixture(t, { reconnectMs: 30 });
   const pair = await f.pair();

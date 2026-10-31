@@ -206,10 +206,11 @@
       if (message.type === "ended") ended(message.reason);
       if (message.type === "error") status(message.message);
     });
-    socket.addEventListener("close", function () {
+    socket.addEventListener("close", function (event) {
       element("create").disabled = true;
       element("join").disabled = true;
       if (intentionalClose || !active) return;
+      if (event.code === 4001) { ended("Your room was opened in another connection."); return; }
       engine({ type: "pause", paused: true });
       if (!token || !room) { status("Cannot connect to the room server. Reload and try again."); return; }
       if (!reconnectDeadline) reconnectDeadline = Date.now() + 30000;
