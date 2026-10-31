@@ -161,7 +161,7 @@ test("relay compact updates and restore a complete match after a skipped frame",
     { ...first.entities[0], fields: { x: 15, color: "blue", path: [3, 2, 1] }, player: { fname: "Sam" } },
     { id: 3, type: 78, fields: { x: 50, y: 60 } }
   ] };
-  pair.host.send({ type: "snapshot", matchId: started.matchId, snapshot: next });
+  pair.host.send({ type: "snapshot", matchId: started.matchId, snapshot: protocol.snapshotDelta(next, first) });
   const update = (await pair.guest.next("snapshot")).snapshot;
   assert.equal(update.base, 1);
   assert.deepEqual(protocol.restoreSnapshot(update, first), next);

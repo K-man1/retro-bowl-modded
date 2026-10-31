@@ -17,6 +17,7 @@
   var waitingStart;
   var latestPresentation;
   var queuedSnapshots = [];
+  var uploadedSnapshot = null;
 
   var launch = document.createElement("button");
   launch.id = "online-open";
@@ -90,6 +91,7 @@
   function start(message) {
     if (!engineReady) { waitingStart = message; return; }
     matchId = message.matchId;
+    uploadedSnapshot = null;
     simulation = player === 0;
     latestPresentation = null;
     panel.classList.add("playing");
@@ -106,6 +108,7 @@
   }
   function showRoom(message) {
     room = message;
+    if (message.paused) uploadedSnapshot = null;
     element("connect").hidden = true;
     element("room").hidden = false;
     element("room-code").textContent = message.code;
@@ -174,6 +177,7 @@
   }
   function connect(resume) {
     clearTimeout(reconnectTimer);
+    uploadedSnapshot = null;
     intentionalClose = false;
     socket = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/multiplayer");
     socket.addEventListener("open", function () {
@@ -277,7 +281,10 @@
       if (waitingStart) { start(waitingStart); waitingStart = null; }
     }
     if (message.type === "local-input" && player === 1) send({ type: "input", matchId: matchId, input: message.input });
-    if (message.type === "snapshot" && player === 0 && socket?.readyState === WebSocket.OPEN && socket.bufferedAmount <= 64 * 1024) send({ type: "snapshot", matchId: matchId, snapshot: message.snapshot });
+    if (message.type === "snapshot" && player === 0 && !room?.paused && socket?.readyState === WebSocket.OPEN && socket.bufferedAmount <= 64 * 1024) {
+      send({ type: "snapshot", matchId: matchId, snapshot: window.ExhibitionProtocol.snapshotDelta(message.snapshot, uploadedSnapshot) });
+      uploadedSnapshot = message.snapshot;
+    }
     if (message.type === "presentation") showPresentation(message);
     if (message.type === "finished" && player === 0) send({ type: "finished", matchId: matchId, score: message.score });
     if (message.type === "started") { frame.focus(); if (room?.paused) engine({ type: "pause", paused: true }); }

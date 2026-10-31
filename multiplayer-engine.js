@@ -357,7 +357,7 @@
   }
   function interpolateSnapshot() {
     if (!snapshotBuffer.length) return;
-    var target = performance.now() - 100;
+    var target = performance.now() - 50;
     while (snapshotBuffer.length > 2 && snapshotBuffer[1].received <= target) snapshotBuffer.shift();
     var earlier = snapshotBuffer[0];
     var later = snapshotBuffer[1];
@@ -567,7 +567,10 @@
     if (message.type === "input") setInput(message.player, message.input);
     if (message.type === "snapshot") receiveSnapshot(message.snapshot);
     if (message.type === "network") networkCongested = message.congested;
-    if (message.type === "action") localActions.push({ id: actionId++, type: message.action, prompt: message.prompt, choice: message.choice });
+    if (message.type === "action") {
+      localActions.push({ id: actionId++, type: message.action, prompt: message.prompt, choice: message.choice });
+      collectInput();
+    }
     if (message.type === "pause") {
       if (paused === message.paused) return;
       paused = message.paused;
@@ -602,6 +605,7 @@
         if (!event.repeat && [87, 65, 83, 68, 37, 38, 39, 40].includes(code)) localActions.push({ id: actionId++, type: "key", code: code });
         if (!event.repeat && [32, 81].includes(code)) localActions.push({ id: actionId++, type: code === 81 ? "switch" : "space" });
       } else pressed.delete(code);
+      if (!event.repeat) collectInput();
     }, true);
   });
   ["pointermove", "pointerdown", "pointerup"].forEach(function (type) {
@@ -614,16 +618,17 @@
       if (type === "pointerdown") { pointer.down = true; event.target.setPointerCapture(event.pointerId); }
       if (type === "pointerup") pointer.down = false;
       if (type !== "pointermove") localActions.push({ id: actionId++, type: "pointer", x: pointer.x, y: pointer.y, down: pointer.down });
+      if (type !== "pointermove") collectInput();
     }, true);
   });
-  window.addEventListener("blur", function () { pressed.clear(); pointer.down = false; });
+  window.addEventListener("blur", function () { pressed.clear(); pointer.down = false; collectInput(); });
   setInterval(collectInput, 34);
   setInterval(function () {
     if (!running || !sceneReady || mode !== "host" || paused || finished || networkCongested) return;
     var snapshot = captureSnapshot();
     onEvent({ type: "snapshot", snapshot: snapshot });
     onEvent({ type: "presentation", possession: snapshot.possession, score: snapshot.score, clock: snapshot.clock, prompt: prompt });
-  }, 100);
+  }, 50);
 
   var canvasSize = "";
   function fitCanvas() {

@@ -197,9 +197,11 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
         } else if (message.type === "snapshot") {
           if (socket.seat !== 0 || room.phase !== "playing" || message.matchId !== room.matchId) throw new Error("Only the active host can publish match state.");
           if (room.players.some(entry => !entry.socket)) return;
-          const snapshot = message.snapshot;
+          let snapshot = message.snapshot;
           if (!snapshot || !Number.isSafeInteger(snapshot.tick) || snapshot.tick < 0 || !Array.isArray(snapshot.entities) || snapshot.entities.length > 384 || !Array.isArray(snapshot.score) || snapshot.score.length !== 2 || !snapshot.score.every(score => Number.isInteger(score) && score >= 0 && score <= 999) || ![0, 1].includes(snapshot.possession)) throw new Error("Invalid match state.");
           if (snapshot.tick <= room.tick) return;
+          snapshot = protocol.restoreSnapshot(snapshot, room.snapshot);
+          if (snapshot.entities.length > 384) throw new Error("Invalid match state.");
           room.tick = snapshot.tick;
           room.snapshot = snapshot;
           const guest = room.players[1].socket;
