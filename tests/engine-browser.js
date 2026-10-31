@@ -5,6 +5,7 @@
   var mirrorFrame;
   var hostSnapshot;
   var hostTeams;
+  document.getElementById("game").src = "../multiplayer-frame.html?local=" + (new URLSearchParams(location.search).has("career") ? "career" : "1");
   function check(condition, message) {
     if (!condition) throw new Error(message);
     checks.push("PASS " + message);
@@ -50,6 +51,9 @@
       check(Boolean(defender), "Select an eligible defender");
       engine.setInput(1 - game._UD, { keys: [68] });
       gameWindow._Z71(defender, defender);
+      check(defender._o71 === 0, "Keep defenders behind the line before the snap");
+      engine.instances(gameWindow.global._d01)[0]._kp = 2;
+      gameWindow._Z71(defender, defender);
       check(defender._o71 === 1 && defender._541 === 0, "Route independent input to the defender");
       var selected = defender.id;
       engine.switchDefender();
@@ -60,6 +64,14 @@
       game._Vy = 3;
       gameWindow._Ib1(game, game);
       check(game._kp === 2, "Play the second team's drive instead of simulating it (state=" + game._kp + ", team=" + gameWindow._jj(game, game, 64)._Gp + ", teams=" + game._Fj + ", possession=" + game._UD + ")");
+      for (var drive = 0; drive < 6; drive++) {
+        game._t11 = 1;
+        gameWindow._eb1(game, game, 1);
+        gameWindow._1c1(game, game);
+      }
+      game._t11 = 1;
+      gameWindow._eb1(game, game, 1);
+      check(engine.instances(74).length === 11 && engine.instances(75).length === 11, "Keep both rosters valid across repeated possession changes");
       game._Wy = 1;
       game._t11 = 1;
       var score = game._Sb1[game._UD];
@@ -67,6 +79,9 @@
       check(game._Sb1[game._UD] === score + 6, "Score a touchdown using engine rules");
       gameWindow._eb1(game, game, 1);
       hostSnapshot = engine.captureSnapshot();
+      check(new Set(hostSnapshot.entities.map(function (entity) { return entity.id; })).size === hostSnapshot.entities.length, "Capture each native entity once using its concrete object type");
+      var trajectory = hostSnapshot.entities.find(function (entity) { return entity.type === 78; });
+      check(trajectory && trajectory.fields._9L1.length === 50, "Capture the complete native trajectory");
       check(hostSnapshot.entities.length >= 23 && hostSnapshot.camera.length === 4, "Capture native entities and camera");
       gameWindow._1d1(game, game, 1);
       check(JSON.stringify(Object.assign({}, localStorage)) === before, "Leave browser career saves unchanged");

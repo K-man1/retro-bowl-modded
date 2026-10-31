@@ -42,15 +42,14 @@
     '<div id="online-players"></div><button id="online-ready" type="button">READY</button></div>' +
     '<p>Defense: WASD / arrows to move, Q to switch, Space to dive. Keep the creator’s game open.</p>' +
     '<button id="online-close" type="button">BACK TO GAME</button></div>' +
-    '<div id="online-matchbar" hidden><span id="online-role"></span><div><button id="online-continue" type="button">CONTINUE / SPACE</button> <button id="online-audible" type="button">AUDIBLE</button> <button id="online-timeout" type="button">TIMEOUT</button> <button id="online-leave" type="button">LEAVE</button></div></div>' +
-    '<div id="online-choice" hidden><p id="online-question"></p><div class="online-row"><button id="online-choice-a" type="button"></button><button id="online-choice-b" type="button"></button></div></div>' +
+    '<div id="online-matchbar" hidden><button id="online-room-toggle" type="button">ROOM</button><div id="online-matchmenu" hidden><p id="online-role"></p><p>Defense: WASD / arrows, Q to switch, Space to dive.</p><button id="online-continue" type="button">CONTINUE / SPACE</button> <button id="online-audible" type="button">AUDIBLE</button> <button id="online-timeout" type="button">TIMEOUT</button> <button id="online-leave" type="button">LEAVE</button></div></div>' +
     '<div id="online-finish" hidden><h1 id="online-result">FINAL SCORE</h1><p id="online-score"></p><button id="online-rematch" type="button">REMATCH</button> <button id="online-exit" type="button">LEAVE</button></div>' +
     '<p id="online-status" role="status" aria-live="polite"></p>';
   document.body.appendChild(panel);
   var careerStep = window._8j5;
   window._8j5 = function () { if (!active) return careerStep.apply(window, arguments); };
   function element(id) { return document.getElementById("online-" + id); }
-  function status(message) { element("status").textContent = message; }
+  function status(message) { element("status").textContent = message; element("status").hidden = !message; }
   function send(message) {
     if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(Object.assign({ v: 1 }, message)));
     else status("Connecting to the room server...");
@@ -97,7 +96,7 @@
     element("lobby").hidden = true;
     element("matchbar").hidden = false;
     element("finish").hidden = true;
-    element("choice").hidden = true;
+    element("matchmenu").hidden = true;
     frame.hidden = false;
     status("Starting exhibition...");
     engine({ type: "start", teams: message.teams, settings: message.settings, player: player });
@@ -135,26 +134,16 @@
     if (message.phase === "finished") element("rematch").disabled = Boolean(me && me.ready);
   }
   function showPresentation(message) {
+    if (!room || room.phase !== "playing") return;
     latestPresentation = message;
     var offense = message.possession === player;
     var clock = message.clock;
     element("role").textContent = (offense ? "OFFENSE" : "DEFENSE") + " / " + message.score.join(" - ") + " / " + (clock[0] > 4 ? "OT" : "Q" + clock[0]) + " " + clock[1] + ":" + String(clock[2]).padStart(2, "0");
     ["continue", "audible", "timeout"].forEach(function (id) { element(id).disabled = !offense || Boolean(room && room.paused); });
-    var choice = message.prompt;
-    element("choice").hidden = !choice;
-    if (choice) {
-      element("question").textContent = choice.text.replace(/##/g, "\n");
-      ["choice-a", "choice-b"].forEach(function (id, index) {
-        element(id).textContent = choice.options[index];
-        element(id).hidden = !choice.options[index];
-        element(id).disabled = choice.player !== player || Boolean(room && room.paused);
-      });
-    }
-    if (!room || !room.paused) status(offense ? "OFFENSE: drag from the quarterback to pass; click the running back to hand off. WASD / arrows control the runner." : "DEFENSE: WASD / arrows move, Q switches defender, Space dives. The yellow ring marks your player.");
+    if (!room.paused) status("");
   }
   function finish(message) {
     engine({ type: "pause", paused: true });
-    element("choice").hidden = true;
     element("finish").hidden = false;
     element("result").textContent = "FINAL SCORE";
     element("score").textContent = message.score.join(" - ");
@@ -174,6 +163,9 @@
       element("result").textContent = "MATCH ENDED";
       element("score").textContent = reason;
       element("rematch").hidden = true;
+    } else {
+      element("room").hidden = true;
+      element("connect").hidden = false;
     }
     status(reason);
   }
@@ -262,7 +254,7 @@
     element("room").hidden = true;
     element("matchbar").hidden = true;
     element("finish").hidden = true;
-    element("choice").hidden = true;
+    element("matchmenu").hidden = true;
     launch.hidden = false;
     if (typeof window._cg4 === "boolean") window._cg4 = false;
   }
@@ -283,7 +275,11 @@
     if (message.type === "presentation") showPresentation(message);
     if (message.type === "finished" && player === 0) send({ type: "finished", matchId: matchId, score: message.score });
     if (message.type === "started") { frame.focus(); if (room?.paused) engine({ type: "pause", paused: true }); }
-    if (message.type === "error") { engine({ type: "pause", paused: true }); status("Exhibition error: " + message.message); }
+    if (message.type === "error") {
+      engine({ type: "pause", paused: true });
+      status("Exhibition error: " + message.message);
+      if (room) send({ type: "abort" });
+    }
   });
   launch.addEventListener("click", open);
   ["close", "leave", "exit"].forEach(function (id) { element(id).addEventListener("click", close); });
@@ -297,11 +293,9 @@
   ["difficulty", "minutes"].forEach(function (id) { element(id).addEventListener("change", function () { if (room && player === 0) send({ type: "settings", settings: settings() }); }); });
   element("ready").addEventListener("click", function () { send({ type: "ready", ready: !room.players[player].ready }); });
   element("rematch").addEventListener("click", function () { send({ type: "rematch" }); });
+  element("room-toggle").addEventListener("click", function () { element("matchmenu").hidden = !element("matchmenu").hidden; });
   ["continue", "audible", "timeout"].forEach(function (id) {
     element(id).addEventListener("click", function () { engine({ type: "action", action: id === "continue" ? "space" : id }); frame.focus(); });
-  });
-  ["choice-a", "choice-b"].forEach(function (id, index) {
-    element(id).addEventListener("click", function () { engine({ type: "action", action: "choice", prompt: latestPresentation.prompt.id, choice: index }); frame.focus(); });
   });
   window.addEventListener("keydown", function (event) { if (active) event.stopImmediatePropagation(); }, true);
   setInterval(function () { if (active && socket?.readyState === WebSocket.OPEN) send({ type: "ping", at: Date.now() }); }, 5000);

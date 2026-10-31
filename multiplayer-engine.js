@@ -32,6 +32,7 @@
   function emptyInput() { return { keys: [], pointer: { x: 0.5, y: 0.5, down: false } }; }
   var inputs = [emptyInput(), emptyInput()];
   var actionQueues = [[], []];
+  var pointerEdges = [[], []];
   var lastInputAt = [0, 0];
   var localPlayer = 0;
   var onEvent = function (event) { parent.postMessage(Object.assign({ source: "retro-exhibition" }, event), location.origin); };
@@ -42,6 +43,7 @@
   var mode = "host";
   var sceneReady = false;
   var snapshotTick = 0;
+  var appliedTick = -1;
   var mirror = new Map();
   var snapshotBuffer = [];
   var pendingSnapshot = null;
@@ -52,11 +54,11 @@
   var inputSequence = 0;
   var mouseReleased = false;
   var lastMouseDown = false;
-  var entityTypes = [71, 74, 75, 77, 78, 79, 80, 81, 82, 84, 87, 88, 89];
+  var entityTypes = [71, 2, 4, 11, 38, 46, 47, 74, 75, 77, 78, 79, 80, 81, 82, 84, 85, 86, 87, 88, 89];
   var gameFields;
   var errorReported = false;
-  var visualFields = new Set(["x", "y", "__T", "_K11", "_UR", "_oW", "_753", "_sr2"]);
-  var omittedFields = new Set(["id", "_3M2", "_7j", "_Fj", "_be1", "_rk1", "_W01", "_Ca", "_g2"]);
+  var visualFields = new Set(["x", "y", "__T", "_K11", "_UR", "_oW", "_753", "_sr2", "_Ca", "_g2"]);
+  var omittedFields = new Set(["id", "_3M2", "_7j", "_Fj", "_be1", "_rk1", "_W01"]);
   var instanceFields = new Set(["_X_", "_021", "_l31", "_X31", "_Y31"]);
 
   function instances(type) { return Object.values(window._si(type) || {}).filter(Boolean); }
@@ -106,6 +108,9 @@
     selectedDefender = null;
     inputs = [emptyInput(), emptyInput()];
     actionQueues = [[], []];
+    pointerEdges = [[], []];
+    lastMouseDown = false;
+    mouseReleased = false;
   }
 
   function setupExhibition(teams, options) {
@@ -115,6 +120,7 @@
     snapshotBuffer = [];
     pendingSnapshot = null;
     snapshotTick = 0;
+    appliedTick = -1;
     errorReported = false;
     inputSequence = 0;
     actionId = 0;
@@ -149,8 +155,6 @@
     controller._cn = controller._Lo + 1;
     window._Yi(controller._Gn, "op_drivedir", 0);
     window._Yi(controller._Gn, "op_music", 0);
-    window._Yi(controller._Gn, "op_weather", 0);
-    window._Yi(controller._Gn, "op_zoom", 0);
     window._gx(controller, controller);
     running = true;
     finished = false;
@@ -195,13 +199,21 @@
   function setInput(side, input) {
     inputs[side] = input;
     lastInputAt[side] = performance.now();
-    if (input.actions) actionQueues[side].push.apply(actionQueues[side], input.actions);
+    if (input.actions) {
+      input.actions.forEach(function (action) {
+        if (action.type === "pointer") {
+          if (sceneReady && side === match()._UD) pointerEdges[side].push(action);
+        } else actionQueues[side].push(action);
+      });
+    }
   }
   function defend(player) {
     if (!running || finished || paused) return false;
     var game = match();
     if (!selectedDefender || !eligibleDefenders().some(function (candidate) { return candidate.id === selectedDefender; })) switchDefender();
     if (player.id !== selectedDefender) return false;
+    var ball = instances(window.global._d01)[0];
+    if (ball._kp === 0 || ball._kp === 1) { player._o71 = 0; return true; }
     var side = 1 - game._UD;
     var keys = performance.now() - lastInputAt[side] < 500 ? inputs[side].keys : [];
     var x = Number(keys.includes(68) || keys.includes(39)) - Number(keys.includes(65) || keys.includes(37));
@@ -217,13 +229,18 @@
   }
   function presentation(instance) {
     var fields = {};
-    gameFields.forEach(function (key) {
-      if (omittedFields.has(key)) return;
+    var keys = new Set(Object.keys(instance));
+    visualFields.forEach(function (key) { keys.add(key); });
+    keys.forEach(function (key) {
+      if (!gameFields.has(key) || omittedFields.has(key)) return;
       var descriptor = Object.getOwnPropertyDescriptor(instance, key);
       if (!visualFields.has(key) && (!descriptor || !("value" in descriptor))) return;
       var value = instance[key];
       if (typeof value === "number" && Number.isFinite(value) || typeof value === "boolean" || typeof value === "string") fields[key] = value;
-      else if (Array.isArray(value) && value.length <= 32 && value.every(function (part) { return typeof part === "number" && Number.isFinite(part) || typeof part === "string"; })) fields[key] = value.slice();
+      // Native aiming uses 50 points, and ball trails use pairs of coordinates.
+      else if (Array.isArray(value) && value.length <= 128 && value.every(function (part) {
+        return typeof part === "number" && Number.isFinite(part) || typeof part === "string" || Array.isArray(part) && part.length <= 4 && part.every(Number.isFinite);
+      })) fields[key] = value.map(function (part) { return Array.isArray(part) ? part.slice() : part; });
     });
     return fields;
   }
@@ -234,7 +251,7 @@
       score: game._Sb1.slice(), possession: game._UD, clock: [game._Wy, game._r11, game._s11],
       phase: game._kp, defender: selectedDefender, camera: camera(), prompt: prompt,
       entities: entityTypes.flatMap(function (type) {
-        return instances(type).map(function (instance) {
+        return instances(type).filter(function (instance) { return instance._3M2 === type; }).map(function (instance) {
           var entity = { id: instance.id, type: type, fields: presentation(instance) };
           if ((type === 74 || type === 75) && instance._7j !== -4) entity.player = extract(playerFields, instance._7j);
           return entity;
@@ -246,6 +263,19 @@
     if (!sceneReady) { pendingSnapshot = snapshot; return; }
     var game = match();
     if (!game) return;
+    if (appliedTick === snapshot.tick) {
+      snapshot.entities.forEach(function (entity) {
+        var instance = mirror.get(entity.id);
+        if (!instance) return;
+        if (Number.isFinite(entity.fields.x)) instance.x = entity.fields.x;
+        if (Number.isFinite(entity.fields.y)) instance.y = entity.fields.y;
+      });
+      var currentView = window._ft._ZA1[0];
+      window._eB1(currentView, snapshot.camera[0], snapshot.camera[1]);
+      window._YA1(currentView, snapshot.camera[2], snapshot.camera[3]);
+      return;
+    }
+    appliedTick = snapshot.tick;
     if (!mirror.size) {
       entityTypes.forEach(function (type) {
         if (type === 71) return;
@@ -262,11 +292,17 @@
       var instance;
       if (entity.type === 71) instance = game;
       else {
-        var layer = [74, 75, 81, 82].includes(entity.type) ? "Players" : [77, 78].includes(entity.type) ? "Ball" : entity.type === 84 ? "Weather" : "Text";
-        var id = window._dr(0, 0, layer, entity.type);
-        instance = instances(id)[0];
+        var layer = [4, 11, 38, 46, 47].includes(entity.type) ? "PopUps" : [74, 75, 81, 82].includes(entity.type) ? "Players" : [77, 78].includes(entity.type) ? "Ball" : [84, 85, 86].includes(entity.type) ? "Weather" : "Text";
+        // Weather create events discard particles according to the guest's local weather setting.
+        if ([84, 85, 86].includes(entity.type)) instance = window._Sc2._GR2(0, 0, window._zM2._AM2(window._Sc2, layer), entity.type);
+        else {
+          var id = window._dr(0, 0, layer, entity.type);
+          instance = instances(id)[0];
+        }
+        if (!instance) throw new Error("Unable to mirror native entity " + entity.type);
       }
       mirror.set(entity.id, instance);
+      if (entity.type === 77) window.global._d01 = instance.id;
     });
     controller._5Q = snapshot.possession;
     controller._Gp = teamMaps[snapshot.possession];
@@ -277,7 +313,9 @@
         if (!gameFields.has(key) || omittedFields.has(key)) return;
         var value = entity.fields[key];
         if (instanceFields.has(key) && mirror.has(value)) value = mirror.get(value).id;
-        if (typeof value === "number" || typeof value === "string" || typeof value === "boolean" || Array.isArray(value)) instance[key] = value;
+        var descriptor = Object.getOwnPropertyDescriptor(instance, key);
+        var unchanged = descriptor && "value" in descriptor ? descriptor.value === value : visualFields.has(key) && instance[key] === value;
+        if (!unchanged && (typeof value === "number" || typeof value === "string" || typeof value === "boolean" || Array.isArray(value))) instance[key] = value;
       });
       if (entity.player && instance._onlinePlayer === undefined) {
         instance._onlinePlayer = makeMap(entity.player);
@@ -300,7 +338,7 @@
   }
   function interpolateSnapshot() {
     if (!snapshotBuffer.length) return;
-    var target = performance.now() - 75;
+    var target = performance.now() - 50;
     while (snapshotBuffer.length > 2 && snapshotBuffer[1].received <= target) snapshotBuffer.shift();
     var earlier = snapshotBuffer[0];
     var later = snapshotBuffer[1];
@@ -310,7 +348,9 @@
     }
     var blend = Math.max(0, Math.min(1, (target - earlier.received) / (later.received - earlier.received)));
     var previous = new Map(earlier.snapshot.entities.map(function (entity) { return [entity.id, entity]; }));
-    var interpolated = Object.assign({}, later.snapshot, { entities: later.snapshot.entities.map(function (entity) {
+    var interpolated = Object.assign({}, later.snapshot, {
+      camera: later.snapshot.camera.map(function (coordinate, index) { return earlier.snapshot.camera[index] + (coordinate - earlier.snapshot.camera[index]) * blend; }),
+      entities: later.snapshot.entities.map(function (entity) {
       var before = previous.get(entity.id);
       if (!before) return entity;
       var fields = Object.assign({}, entity.fields);
@@ -325,6 +365,19 @@
   }
   function handleActions() {
     var game = match();
+    if (prompt && mouseReleased) {
+      var mouse = offensiveInput().pointer;
+      var x = mouse.x * window._Qy();
+      var y = mouse.y * window._NF();
+      var button = instances(4).concat(instances(11)).find(function (candidate) {
+        return candidate._g2 && x >= candidate.x && x <= candidate.x + candidate._8l1 && y >= candidate.y && y <= candidate.y + candidate._VI;
+      });
+      if (button) {
+        var callback = button._0G;
+        prompt = null;
+        window._li(game, game, callback);
+      }
+    }
     [0, 1].forEach(function (side) {
       var actions = actionQueues[side].splice(0);
       actions.forEach(function (action) {
@@ -332,7 +385,8 @@
           if (action.type === "switch") switchDefender();
           if (action.type === "space") {
             var defender = eligibleDefenders().find(function (candidate) { return candidate.id === selectedDefender; });
-            if (defender) window._Z01(defender, defender, 5);
+            var ball = instances(window.global._d01)[0];
+            if (defender && ball && ball._kp !== 0 && ball._kp !== 1) window._Z01(defender, defender, 5);
           }
           return;
         }
@@ -353,11 +407,19 @@
   }
 
   function installHooks() {
-    gameFields = new Set(Object.values(window._aF2).concat(["x", "y"]));
+    gameFields = new Set(Object.values(window._aF2).concat(Array.from(visualFields)));
     window._Y._OU1.forEach(function (name, index) {
       if (name.indexOf("gml_Script_") === 0) scripts[name.slice(11)] = window._Y._PU1[index].name;
     });
     hook("s_savegame", function () {});
+    var sortRoster = window._AH;
+    window._AH = function (self, other, list) {
+      var side = rosterLists.indexOf(list);
+      var sorted = sortRoster.apply(window, arguments);
+      // Sorting replaces and destroys the native list, so possession must retain its new handle.
+      if (side !== -1) rosterLists[side] = sorted;
+      return sorted;
+    };
     hook("s_end_match", function () {
       finished = true;
       onEvent({ type: "finished", score: match()._Sb1.slice() });
@@ -393,6 +455,7 @@
       if (!running) return message.apply(window, arguments);
       promptCallbacks = [firstCallback, secondCallback];
       prompt = { id: ++promptSerial, text: text, options: [first, second], player: match()._UD };
+      return message.apply(window, arguments);
     };
     hook("s_aim_AI_defense", function (player) {
       if (!defend(player)) return original("s_aim_AI_defense", arguments);
@@ -431,14 +494,17 @@
           window._Sc2._Ch2();
           return;
         }
+        // A click can begin and end between two network packets. Present each edge to the engine.
+        var edge = pointerEdges[match()._UD].shift();
+        if (edge) inputs[match()._UD].pointer = { x: edge.x, y: edge.y, down: edge.down };
+        mouseReleased = lastMouseDown && !offensiveInput().pointer.down;
+        lastMouseDown = offensiveInput().pointer.down;
         if (!paused && !finished) handleActions();
         if (paused || finished || prompt) {
           window._Sc2._D35();
           window._Sc2._Ch2();
           return;
         }
-        mouseReleased = lastMouseDown && !offensiveInput().pointer.down;
-        lastMouseDown = offensiveInput().pointer.down;
       }
       return update.apply(window, arguments);
     };
@@ -474,6 +540,9 @@
       pointer.down = false;
       inputs = [{ keys: [], pointer: { x: 0.5, y: 0.5, down: false } }, { keys: [], pointer: { x: 0.5, y: 0.5, down: false } }];
       actionQueues = [[], []];
+      pointerEdges = [[], []];
+      lastMouseDown = false;
+      mouseReleased = false;
       localActions = [];
       if (!paused && match()) match()._Hd1 = window._ft._ZB();
     }
@@ -506,6 +575,7 @@
       pointer.y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
       if (type === "pointerdown") { pointer.down = true; event.target.setPointerCapture(event.pointerId); }
       if (type === "pointerup") pointer.down = false;
+      if (type !== "pointermove") localActions.push({ id: actionId++, type: "pointer", x: pointer.x, y: pointer.y, down: pointer.down });
     }, true);
   });
   window.addEventListener("blur", function () { pressed.clear(); pointer.down = false; });
@@ -540,7 +610,8 @@
           status.textContent = "Exhibition engine ready";
           window.ExhibitionEngine = { setupExhibition: setupExhibition, setInput: setInput, chooseOffense: chooseOffense, switchDefender: switchDefender, match: match, instances: instances, exportCareer: exportCareer, captureSnapshot: captureSnapshot, receiveSnapshot: receiveSnapshot, applySnapshot: applySnapshot, get defender() { return selectedDefender; } };
           if (localTest) {
-            setupExhibition([{ team: teams[0], roster: [] }, { team: teams[1], roster: [] }], { difficulty: 2, minutes: 1 });
+            var firstTeam = new URLSearchParams(location.search).get("local") === "career" ? exportCareer() : { team: teams[0], roster: [] };
+            setupExhibition([firstTeam, { team: teams[1], roster: [] }], { difficulty: 2, minutes: 1 });
           }
         } catch (error) { reportError(error); }
       }, 100);

@@ -94,6 +94,17 @@ test("validate career fields and exclude unrelated saved information", () => {
   assert.throws(() => protocol.input({ seq: 1, keys: [10000], pointer: { x: 0, y: 0, down: false } }));
 });
 
+test("preserve short pointer clicks and reject invalid pointer actions", () => {
+  const input = { seq: 1, keys: [], pointer: { x: 0.5, y: 0.5, down: false }, actions: [
+    { id: 1, type: "pointer", x: 0.4, y: 0.6, down: true },
+    { id: 2, type: "pointer", x: 0.4, y: 0.6, down: false }
+  ] };
+  assert.deepEqual(protocol.input(input).actions, input.actions);
+  for (const invalid of [{ x: -1 }, { y: Infinity }, { down: 1 }]) {
+    assert.throws(() => protocol.input({ ...input, actions: [{ ...input.actions[0], ...invalid }] }), /pointer/);
+  }
+});
+
 test("sequence inputs and actions, restrict snapshot publishing, isolate rooms", async t => {
   const f = await fixture(t);
   const pair = await f.pair();
