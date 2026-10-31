@@ -225,7 +225,14 @@
     var x = Number(keys.includes(68) || keys.includes(39)) - Number(keys.includes(65) || keys.includes(37));
     var y = Number(keys.includes(83) || keys.includes(40)) - Number(keys.includes(87) || keys.includes(38));
     player._o71 = x || y ? 1 : 0;
-    if (x || y) player._541 = window._701(0, 0, x, y);
+    if (x || y) {
+      player._541 = window._701(0, 0, x, y);
+      // Turn existing momentum with the input, preserving the engine's slower vertical movement.
+      var speed = Math.hypot(player._Da, player._Ea / 0.75);
+      var length = Math.hypot(x, y);
+      player._Da = speed * x / length;
+      player._Ea = speed * y / length * 0.75;
+    }
     return true;
   }
 
