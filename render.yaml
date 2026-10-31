@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: retro-bowl-online
+    runtime: node
+    plan: free
+    region: ohio
+    numInstances: 1
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production

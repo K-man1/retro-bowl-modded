@@ -40,7 +40,7 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
       }
     });
   });
-  const sockets = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024, perMessageDeflate: false });
+  const sockets = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024, perMessageDeflate: { threshold: 1024, serverNoContextTakeover: true, clientNoContextTakeover: true, concurrencyLimit: 4, zlibDeflateOptions: { level: 3 } } });
   server.on("upgrade", (request, socket, head) => {
     const origin = request.headers.origin;
     let validOrigin = !origin;
@@ -128,11 +128,13 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
           if (socket.room) throw new Error("Already connected to a room.");
           const room = rooms.get(message.code);
           const seat = room?.players.findIndex(player => player && player.token === message.token);
-          if (!room || seat === -1) throw new Error("Your room expired. Create or join a new room.");
+          if (!room || seat === -1) { send(socket, { type: "ended", reason: "Your room expired. Create or join a new room." }); return; }
           const player = room.players[seat];
           if (player.socket) throw new Error("This player is already connected.");
           if (seat === 0 && room.phase === "playing" && !message.hasSimulation) {
-            destroyRoom(room, "The host reloaded. Create a new match."); return;
+            const reason = "The host reloaded. Create a new match.";
+            send(socket, { type: "ended", reason });
+            destroyRoom(room, reason); return;
           }
           clearTimeout(player.expiry);
           player.socket = socket;
@@ -157,6 +159,8 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
             send(socket, { type: "ended", reason: "You left the room." });
             publish(room);
           }
+        } else if (message.type === "abort") {
+          destroyRoom(room, "The exhibition could not continue. Create a new match.");
         } else if (message.type === "settings") {
           if (socket.seat !== 0 || room.phase !== "lobby") throw new Error("Only the creator can change lobby settings.");
           room.settings = protocol.settings(message.settings);
@@ -187,7 +191,7 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
           if (socket.seat !== 0 || room.phase !== "playing" || message.matchId !== room.matchId) throw new Error("Only the active host can publish match state.");
           if (room.players.some(entry => !entry.socket)) return;
           const snapshot = message.snapshot;
-          if (!snapshot || !Number.isSafeInteger(snapshot.tick) || snapshot.tick < 0 || !Array.isArray(snapshot.entities) || snapshot.entities.length > 160 || !Array.isArray(snapshot.score) || snapshot.score.length !== 2 || !snapshot.score.every(score => Number.isInteger(score) && score >= 0 && score <= 999) || ![0, 1].includes(snapshot.possession)) throw new Error("Invalid match state.");
+          if (!snapshot || !Number.isSafeInteger(snapshot.tick) || snapshot.tick < 0 || !Array.isArray(snapshot.entities) || snapshot.entities.length > 384 || !Array.isArray(snapshot.score) || snapshot.score.length !== 2 || !snapshot.score.every(score => Number.isInteger(score) && score >= 0 && score <= 999) || ![0, 1].includes(snapshot.possession)) throw new Error("Invalid match state.");
           if (snapshot.tick <= room.tick) return;
           room.tick = snapshot.tick;
           room.snapshot = snapshot;
