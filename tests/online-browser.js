@@ -2,7 +2,7 @@
   "use strict";
   var output = document.getElementById("checks");
   var checks = [];
-  var saves = JSON.stringify(Object.assign({}, localStorage));
+  var saves;
   sessionStorage.removeItem("retro-online-room");
   function check(condition, text) {
     if (!condition) throw new Error(text);
@@ -23,6 +23,34 @@
     var host = document.getElementById("host").contentWindow;
     var guest = document.getElementById("guest").contentWindow;
     await until(function () { return button(host, "open") && button(guest, "open"); }, "load both clients");
+    var connections = [];
+    [host, guest].forEach(function (client) {
+      var NativeSocket = client.WebSocket;
+      client.WebSocket = class extends NativeSocket {
+        constructor(url) {
+          super(url);
+          var connection = { socket: this, snapshots: 0, largestSnapshot: 0, received: 0, receivedBytes: 0, fullBytes: 0, closed: null };
+          connections.push(connection);
+          this.addEventListener("close", function (event) { connection.closed = { code: event.code, reason: event.reason }; });
+          this.addEventListener("message", function (event) {
+            var message = JSON.parse(event.data);
+            if (message.type !== "snapshot") return;
+            connection.received++;
+            connection.receivedBytes += new TextEncoder().encode(event.data).length;
+          });
+        }
+        send(bytes) {
+          var message = JSON.parse(bytes);
+          if (message.type === "snapshot") {
+            var connection = connections.find(function (entry) { return entry.socket === this; }, this);
+            connection.snapshots++;
+            connection.largestSnapshot = Math.max(connection.largestSnapshot, new TextEncoder().encode(bytes).length);
+            connection.fullBytes += new TextEncoder().encode(bytes).length;
+          }
+          super.send(bytes);
+        }
+      };
+    });
     var latency = Number(new URLSearchParams(location.search).get("latency")) || 0;
     if (latency) [host, guest].forEach(function (client) {
       var nativeSend = client.WebSocket.prototype.send;
@@ -35,6 +63,7 @@
     button(host, "open").click();
     button(guest, "open").click();
     await until(function () { return !button(host, "create").disabled && !button(guest, "join").disabled; }, "initialize both engines");
+    saves = JSON.stringify(Object.assign({}, localStorage));
     check(true, "Initialize two independent browser clients");
     button(host, "create").click();
     await until(function () { return button(host, "room-code").textContent.length === 6; }, "create room");
@@ -141,6 +170,30 @@
     await until(function () { return carrier.y > runnerY + 3; }, "deliver a short offensive tap between input updates");
     check(true, "Deliver a quick lateral tap through the network");
     check(JSON.stringify(Object.assign({}, localStorage)) === saves, "Preserve career saves during a network match");
+    var hostSocket = connections[0].socket;
+    Object.defineProperty(hostSocket, "bufferedAmount", { configurable: true, value: 128 * 1024 });
+    await new Promise(function (resolve) { setTimeout(resolve, 400); });
+    var beforeCongestion = connections[0].snapshots;
+    await new Promise(function (resolve) { setTimeout(resolve, 400); });
+    check(connections[0].snapshots === beforeCongestion, "Stop producing snapshots while the host's connection is backed up");
+    delete hostSocket.bufferedAmount;
+    var receivedBeforeRecovery = connections[1].received;
+    await until(function () { return connections[1].received > receivedBeforeRecovery; }, "resume match updates after congestion clears");
+    check(true, "Resume fresh match updates after the connection recovers");
+    var sustain = Number(new URLSearchParams(location.search).get("sustain")) || 0;
+    if (sustain) {
+      var expires = Date.now() + sustain * 1000;
+      while (Date.now() < expires) {
+        await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+        connections.forEach(function (connection) {
+          if (connection.closed) throw new Error("Socket closed: " + JSON.stringify(connection.closed));
+        });
+        output.textContent = checks.join("\n") + "\nSustained session: " + Math.ceil((expires - Date.now()) / 1000) + " seconds remaining; snapshots: " + connections[0].snapshots + "; largest packet: " + connections[0].largestSnapshot + " bytes; guest received: " + connections[1].receivedBytes + " bytes";
+      }
+      check(connections.length === 2 && connections.every(function (connection) { return connection.socket.readyState === WebSocket.OPEN; }), "Keep both players connected for " + sustain + " seconds");
+      check(connections[1].received > 10, "Continue receiving match updates throughout the session");
+      checks.push("Match payloads: host=" + connections[0].fullBytes + " bytes; guest=" + connections[1].receivedBytes + " bytes");
+    }
     checks.push("Two-client checks passed" + (latency ? " at " + latency + " ms simulated RTT" : ""));
     output.textContent = checks.join("\n");
   } catch (error) {

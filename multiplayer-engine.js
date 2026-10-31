@@ -49,6 +49,8 @@
   var mirror = new Map();
   var snapshotBuffer = [];
   var pendingSnapshot = null;
+  var receivedSnapshot = null;
+  var networkCongested = false;
   var pressed = new Set();
   var pointer = { x: 0.5, y: 0.5, down: false };
   var localActions = [];
@@ -123,6 +125,8 @@
     mirror.clear();
     snapshotBuffer = [];
     pendingSnapshot = null;
+    receivedSnapshot = null;
+    networkCongested = false;
     snapshotTick = 0;
     appliedTick = -1;
     errorReported = false;
@@ -344,14 +348,16 @@
     onEvent({ type: "presentation", possession: snapshot.possession, score: snapshot.score, clock: snapshot.clock, prompt: snapshot.prompt });
   }
   function receiveSnapshot(snapshot) {
-    if (snapshotBuffer.length && snapshot.tick <= snapshotBuffer[snapshotBuffer.length - 1].snapshot.tick) return;
+    if (receivedSnapshot && snapshot.tick <= receivedSnapshot.tick) return;
+    snapshot = window.ExhibitionProtocol.restoreSnapshot(snapshot, receivedSnapshot);
+    receivedSnapshot = snapshot;
     snapshotBuffer.push({ received: performance.now(), snapshot: snapshot });
     if (snapshotBuffer.length > 8) snapshotBuffer.shift();
     if (!sceneReady) pendingSnapshot = snapshot;
   }
   function interpolateSnapshot() {
     if (!snapshotBuffer.length) return;
-    var target = performance.now() - 50;
+    var target = performance.now() - 100;
     while (snapshotBuffer.length > 2 && snapshotBuffer[1].received <= target) snapshotBuffer.shift();
     var earlier = snapshotBuffer[0];
     var later = snapshotBuffer[1];
@@ -360,17 +366,20 @@
       return;
     }
     var blend = Math.max(0, Math.min(1, (target - earlier.received) / (later.received - earlier.received)));
+    if (appliedTick !== later.snapshot.tick) applySnapshot(later.snapshot);
     var previous = new Map(earlier.snapshot.entities.map(function (entity) { return [entity.id, entity]; }));
-    var interpolated = Object.assign({}, later.snapshot, {
-      camera: later.snapshot.camera.map(function (coordinate, index) { return earlier.snapshot.camera[index] + (coordinate - earlier.snapshot.camera[index]) * blend; }),
-      entities: later.snapshot.entities.map(function (entity) {
+    later.snapshot.entities.forEach(function (entity) {
       var before = previous.get(entity.id);
-      if (!before) return entity;
-      var fields = Object.assign({}, entity.fields);
-      ["x", "y"].forEach(function (key) { fields[key] = before.fields[key] + (fields[key] - before.fields[key]) * blend; });
-      return Object.assign({}, entity, { fields: fields });
-    }) });
-    applySnapshot(interpolated);
+      var instance = mirror.get(entity.id);
+      if (!before || !instance) return;
+      ["x", "y"].forEach(function (key) {
+        if (Number.isFinite(before.fields[key]) && Number.isFinite(entity.fields[key])) instance[key] = before.fields[key] + (entity.fields[key] - before.fields[key]) * blend;
+      });
+    });
+    var view = window._ft._ZA1[0];
+    var position = later.snapshot.camera.map(function (coordinate, index) { return earlier.snapshot.camera[index] + (coordinate - earlier.snapshot.camera[index]) * blend; });
+    window._eB1(view, position[0], position[1]);
+    window._YA1(view, position[2], position[3]);
   }
   function offensiveInput() {
     var side = match()._UD;
@@ -557,6 +566,7 @@
     }
     if (message.type === "input") setInput(message.player, message.input);
     if (message.type === "snapshot") receiveSnapshot(message.snapshot);
+    if (message.type === "network") networkCongested = message.congested;
     if (message.type === "action") localActions.push({ id: actionId++, type: message.action, prompt: message.prompt, choice: message.choice });
     if (message.type === "pause") {
       if (paused === message.paused) return;
@@ -609,11 +619,11 @@
   window.addEventListener("blur", function () { pressed.clear(); pointer.down = false; });
   setInterval(collectInput, 34);
   setInterval(function () {
-    if (!running || !sceneReady || mode !== "host" || paused || finished) return;
+    if (!running || !sceneReady || mode !== "host" || paused || finished || networkCongested) return;
     var snapshot = captureSnapshot();
     onEvent({ type: "snapshot", snapshot: snapshot });
     onEvent({ type: "presentation", possession: snapshot.possession, score: snapshot.score, clock: snapshot.clock, prompt: prompt });
-  }, 50);
+  }, 100);
 
   var canvasSize = "";
   function fitCanvas() {

@@ -60,7 +60,51 @@
     });
     return { seq: candidate.seq, keys: Array.from(new Set(candidate.keys)), pointer: { x: pointer.x, y: pointer.y, down: pointer.down }, actions: actions };
   }
-  var protocol = { version: 1, settings: settings, selection: selection, input: input, keys: keys, teamFields: teamFields, playerFields: playerFields };
+  function snapshotDelta(snapshot, previous) {
+    if (!previous) return snapshot;
+    var before = new Map(previous.entities.map(function (entity) { return [entity.id, entity]; }));
+    var entities = [];
+    snapshot.entities.forEach(function (entity) {
+      var old = before.get(entity.id);
+      before.delete(entity.id);
+      if (!old || old.type !== entity.type) { entities.push(entity); return; }
+      var fields = {};
+      Object.keys(entity.fields).forEach(function (key) {
+        var field = entity.fields[key];
+        if (Array.isArray(field) ? JSON.stringify(field) !== JSON.stringify(old.fields[key]) : field !== old.fields[key]) fields[key] = field;
+      });
+      var removedFields = Object.keys(old.fields).filter(function (key) { return !Object.prototype.hasOwnProperty.call(entity.fields, key); });
+      var playerChanged = JSON.stringify(entity.player) !== JSON.stringify(old.player);
+      if (Object.keys(fields).length || removedFields.length || playerChanged) {
+        var changed = { id: entity.id, type: entity.type, fields: fields };
+        if (removedFields.length) changed.removedFields = removedFields;
+        if (playerChanged) changed.player = entity.player || null;
+        entities.push(changed);
+      }
+    });
+    return Object.assign({}, snapshot, { base: previous.tick, entities: entities, removed: Array.from(before.keys()) });
+  }
+  function restoreSnapshot(snapshot, previous) {
+    if (snapshot.base === undefined) return snapshot;
+    if (!previous || snapshot.base !== previous.tick) throw new Error("Missing match update. Reconnect to the room.");
+    var entities = new Map(previous.entities.map(function (entity) { return [entity.id, entity]; }));
+    snapshot.removed.forEach(function (id) { entities.delete(id); });
+    snapshot.entities.forEach(function (entity) {
+      var old = entities.get(entity.id);
+      var restored = old && old.type === entity.type ? Object.assign({}, old, entity, { fields: Object.assign({}, old.fields, entity.fields) }) : entity;
+      if (entity.removedFields) {
+        entity.removedFields.forEach(function (key) { delete restored.fields[key]; });
+        delete restored.removedFields;
+      }
+      if (restored.player === null) delete restored.player;
+      entities.set(entity.id, restored);
+    });
+    var restored = Object.assign({}, snapshot, { entities: Array.from(entities.values()) });
+    delete restored.base;
+    delete restored.removed;
+    return restored;
+  }
+  var protocol = { version: 1, settings: settings, selection: selection, input: input, snapshotDelta: snapshotDelta, restoreSnapshot: restoreSnapshot, keys: keys, teamFields: teamFields, playerFields: playerFields };
   if (typeof module !== "undefined" && module.exports) module.exports = protocol;
   else root.ExhibitionProtocol = protocol;
 })(typeof window === "undefined" ? globalThis : window);

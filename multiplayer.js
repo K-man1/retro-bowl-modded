@@ -16,7 +16,7 @@
   var engineReady = false;
   var waitingStart;
   var latestPresentation;
-  var queuedSnapshot;
+  var queuedSnapshots = [];
 
   var launch = document.createElement("button");
   launch.id = "online-open";
@@ -100,7 +100,8 @@
     frame.hidden = false;
     status("Starting exhibition...");
     engine({ type: "start", teams: message.teams, settings: message.settings, player: player });
-    if (queuedSnapshot && queuedSnapshot.matchId === matchId) { engine(queuedSnapshot); queuedSnapshot = null; }
+    queuedSnapshots.forEach(function (snapshot) { if (snapshot.matchId === matchId) engine(snapshot); });
+    queuedSnapshots = [];
     frame.focus();
   }
   function showRoom(message) {
@@ -155,6 +156,8 @@
     simulation = false;
     token = null;
     room = null;
+    waitingStart = null;
+    queuedSnapshots = [];
     reconnectDeadline = 0;
     sessionStorage.removeItem("retro-online-room");
     engine({ type: "pause", paused: true });
@@ -177,7 +180,7 @@
       if (!active) { socket.close(); return; }
       element("create").disabled = !engineReady;
       element("join").disabled = !engineReady;
-      if (resume && token) send({ type: "resume", code: resume, token: token, hasSimulation: simulation });
+      if (resume && token) send({ type: "resume", code: resume, token: token, hasSimulation: simulation, snapshotFormat: "delta" });
       else status("Choose CREATE ROOM or enter your friend’s code.");
     });
     socket.addEventListener("message", function (event) {
@@ -195,8 +198,8 @@
       if (message.type === "restore" && message.phase === "playing" && player === 1 && !panel.classList.contains("playing")) start(message);
       if (message.type === "input" && player === 0 && message.player === 1 && message.matchId === matchId) engine(message);
       if (message.type === "snapshot" && player === 1) {
-        if (message.matchId === matchId) engine(message);
-        else if (waitingStart?.matchId === message.matchId) queuedSnapshot = message;
+        if (engineReady && message.matchId === matchId) engine(message);
+        else if (waitingStart?.matchId === message.matchId) queuedSnapshots.push(message);
       }
       if (message.type === "pause") { engine({ type: "pause", paused: true }); status("Connection lost. Waiting up to " + message.seconds + " seconds..."); }
       if (message.type === "finished") finish(message);
@@ -243,6 +246,8 @@
     if (socket) socket.close();
     if (frame) frame.remove();
     frame = null;
+    waitingStart = null;
+    queuedSnapshots = [];
     token = null;
     room = null;
     simulation = false;
@@ -271,7 +276,7 @@
       if (waitingStart) { start(waitingStart); waitingStart = null; }
     }
     if (message.type === "local-input" && player === 1) send({ type: "input", matchId: matchId, input: message.input });
-    if (message.type === "snapshot" && player === 0) send({ type: "snapshot", matchId: matchId, snapshot: message.snapshot });
+    if (message.type === "snapshot" && player === 0 && socket?.readyState === WebSocket.OPEN && socket.bufferedAmount <= 64 * 1024) send({ type: "snapshot", matchId: matchId, snapshot: message.snapshot });
     if (message.type === "presentation") showPresentation(message);
     if (message.type === "finished" && player === 0) send({ type: "finished", matchId: matchId, score: message.score });
     if (message.type === "started") { frame.focus(); if (room?.paused) engine({ type: "pause", paused: true }); }
@@ -284,7 +289,7 @@
   launch.addEventListener("click", open);
   ["close", "leave", "exit"].forEach(function (id) { element(id).addEventListener("click", close); });
   element("create").addEventListener("click", function () { send({ type: "create", settings: settings() }); });
-  element("join").addEventListener("click", function () { send({ type: "join", code: element("code").value.trim().toUpperCase() }); });
+  element("join").addEventListener("click", function () { send({ type: "join", code: element("code").value.trim().toUpperCase(), snapshotFormat: "delta" }); });
   element("copy").addEventListener("click", async function () {
     try { await navigator.clipboard.writeText(element("invite").value); status("Invite link copied."); }
     catch { element("invite").select(); status("Select and copy the invite link above."); }
@@ -299,5 +304,8 @@
   });
   window.addEventListener("keydown", function (event) { if (active) event.stopImmediatePropagation(); }, true);
   setInterval(function () { if (active && socket?.readyState === WebSocket.OPEN) send({ type: "ping", at: Date.now() }); }, 5000);
+  setInterval(function () {
+    if (active && player === 0) engine({ type: "network", congested: !socket || socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 64 * 1024 });
+  }, 100);
   if (new URLSearchParams(location.hash.slice(1)).has("room")) window.addEventListener("load", open);
 })();

@@ -52,10 +52,11 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
   });
 
   function send(socket, message, volatile = false) {
-    if (socket?.readyState !== WebSocket.OPEN) return;
-    if (volatile && socket.bufferedAmount > 512 * 1024) return;
-    if (socket.bufferedAmount > 2 * 1024 * 1024) { socket.close(1013, "Connection too slow"); return; }
+    if (socket?.readyState !== WebSocket.OPEN) return false;
+    if (volatile && socket.bufferedAmount > 64 * 1024) return false;
+    if (socket.bufferedAmount > 2 * 1024 * 1024) { socket.close(1013, "Connection too slow"); return false; }
     socket.send(JSON.stringify({ v: protocol.version, ...message }));
+    return true;
   }
   function state(room) {
     return { type: "room", code: room.code, phase: room.phase, matchId: room.matchId, settings: room.settings, paused: room.players.some(player => !player?.socket), players: room.players.map(player => player ? { ready: player.ready, connected: Boolean(player.socket), selection: player.selection } : null) };
@@ -84,7 +85,7 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
     room.matchId++;
     room.snapshot = null;
     room.tick = -1;
-    room.players.forEach(player => { player.seq = -1; player.action = -1; });
+    room.players.forEach(player => { player.seq = -1; player.action = -1; player.socket.snapshot = null; });
     broadcast(room, { type: "start", matchId: room.matchId, teams: room.players.map(player => player.selection), settings: room.settings });
     publish(room);
   }
@@ -121,6 +122,7 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
           const room = rooms.get(message.code);
           if (!room) throw new Error("Room not found. Check the code.");
           if (room.phase !== "lobby" || room.players[1]) throw new Error("This room is full or already playing.");
+          socket.compactSnapshots = message.snapshotFormat === "delta";
           joinSeat(room, 1, socket);
           return;
         }
@@ -131,6 +133,7 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
           if (!room || seat === -1) { send(socket, { type: "ended", reason: "Your room expired. Create or join a new room." }); return; }
           const player = room.players[seat];
           if (player.socket) throw new Error("This player is already connected.");
+          socket.compactSnapshots = message.snapshotFormat === "delta";
           if (seat === 0 && room.phase === "playing" && !message.hasSimulation) {
             const reason = "The host reloaded. Create a new match.";
             send(socket, { type: "ended", reason });
@@ -143,7 +146,7 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
           send(socket, { type: "joined", code: room.code, player: seat, token: player.token, resumed: true });
           send(socket, { type: "restore", matchId: room.matchId, teams: room.players.filter(Boolean).map(entry => entry.selection), settings: room.settings, phase: room.phase });
           publish(room);
-          if (room.snapshot) send(socket, { type: "snapshot", matchId: room.matchId, snapshot: room.snapshot });
+          if (room.snapshot && send(socket, { type: "snapshot", matchId: room.matchId, snapshot: room.snapshot })) socket.snapshot = room.snapshot;
           return;
         }
         const room = socket.room;
@@ -195,7 +198,11 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
           if (snapshot.tick <= room.tick) return;
           room.tick = snapshot.tick;
           room.snapshot = snapshot;
-          send(room.players[1].socket, { type: "snapshot", matchId: room.matchId, snapshot }, true);
+          const guest = room.players[1].socket;
+          if (guest.bufferedAmount <= 64 * 1024) {
+            const update = guest.compactSnapshots ? protocol.snapshotDelta(snapshot, guest.snapshot) : snapshot;
+            if (send(guest, { type: "snapshot", matchId: room.matchId, snapshot: update }, true)) guest.snapshot = snapshot;
+          }
         } else if (message.type === "finished") {
           if (socket.seat !== 0 || room.phase !== "playing" || message.matchId !== room.matchId || !Array.isArray(message.score) || message.score.length !== 2 || !message.score.every(score => Number.isInteger(score) && score >= 0 && score <= 999)) throw new Error("Invalid match result.");
           room.phase = "finished";
@@ -210,9 +217,10 @@ function createServer({ reconnectMs = 30000, lobbyMs = 30 * 60 * 1000, maxRooms 
         } else throw new Error("Unknown multiplayer message.");
       } catch (error) { send(socket, { type: "error", message: error instanceof SyntaxError ? "Invalid JSON message." : error.message }); }
     });
-    socket.on("close", () => {
+    socket.on("close", (code, reason) => {
       const room = socket.room;
       if (!room || !rooms.has(room.code)) return;
+      console.log("Player disconnected: seat=" + socket.seat + " code=" + code + " reason=" + reason.toString());
       const player = room.players[socket.seat];
       if (player.socket !== socket) return;
       player.socket = null;

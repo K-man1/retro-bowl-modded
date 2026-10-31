@@ -36,12 +36,12 @@ async function fixture(t, options = {}) {
     clients.push(client);
     return client;
   }
-  async function pair() {
+  async function pair(snapshotFormat) {
     const host = await connect();
     host.send({ type: "create", settings: { difficulty: 2, minutes: 1 } });
     const joined = await host.next("joined");
     const guest = await connect();
-    guest.send({ type: "join", code: joined.code });
+    guest.send({ type: "join", code: joined.code, snapshotFormat });
     const guestJoined = await guest.next("joined");
     return { host, guest, joined, guestJoined };
   }
@@ -145,6 +145,37 @@ test("disconnect pauses play and token reconnect restores authoritative state", 
   assert.equal((await reconnect.next("joined")).player, 1);
   assert.deepEqual((await reconnect.next("snapshot")).snapshot, snapshot);
   assert.equal((await reconnect.next("room")).paused, false);
+});
+
+test("relay compact updates and restore a complete match after a skipped frame", async t => {
+  const f = await fixture(t);
+  const pair = await f.pair("delta");
+  const started = await f.start(pair);
+  const first = { tick: 1, entities: [
+    { id: 1, type: 74, fields: { x: 10, y: 20, color: "blue", path: [1, 2, 3] }, player: { fname: "Pat" } },
+    { id: 2, type: 75, fields: { x: 30, y: 40 } }
+  ], score: [0, 0], possession: 0 };
+  pair.host.send({ type: "snapshot", matchId: started.matchId, snapshot: first });
+  assert.deepEqual((await pair.guest.next("snapshot")).snapshot, first);
+  const next = { ...first, tick: 3, entities: [
+    { ...first.entities[0], fields: { x: 15, color: "blue", path: [3, 2, 1] }, player: { fname: "Sam" } },
+    { id: 3, type: 78, fields: { x: 50, y: 60 } }
+  ] };
+  pair.host.send({ type: "snapshot", matchId: started.matchId, snapshot: next });
+  const update = (await pair.guest.next("snapshot")).snapshot;
+  assert.equal(update.base, 1);
+  assert.deepEqual(protocol.restoreSnapshot(update, first), next);
+  assert.equal(update.entities[0].fields.color, undefined);
+  assert.throws(() => protocol.restoreSnapshot(update, null), /Missing match update/);
+  assert.equal(first.entities[0].fields.y, 20);
+  pair.guest.socket.close();
+  await pair.host.next("pause");
+  const reconnect = await f.connect();
+  reconnect.send({ type: "resume", code: pair.joined.code, token: pair.guestJoined.token, snapshotFormat: "delta" });
+  assert.deepEqual((await reconnect.next("snapshot")).snapshot, next);
+  const last = { ...next, tick: 4 };
+  pair.host.send({ type: "snapshot", matchId: started.matchId, snapshot: last });
+  assert.deepEqual(protocol.restoreSnapshot((await reconnect.next("snapshot")).snapshot, next), last);
 });
 
 test("disconnect timeout, host refresh and server restart end matches explicitly", async t => {
