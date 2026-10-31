@@ -58,6 +58,11 @@
     var hostGame = engineWindow(host);
     var guestGame = engineWindow(guest);
     var match = hostGame.ExhibitionEngine.match();
+    [hostGame, guestGame].forEach(function (game) {
+      var canvas = game.document.getElementById("canvas");
+      var bounds = canvas.getBoundingClientRect();
+      check(Number.isInteger(bounds.width / canvas.width) && Number.isInteger(bounds.height / canvas.height) && Number.isInteger(bounds.x) && Number.isInteger(bounds.y), "Keep the game picture aligned to whole pixels at an odd window size");
+    });
     check(guestGame.ExhibitionEngine.match()._UD === match._UD, "Synchronize initial possession");
     var offense = match._UD === 0 ? host : guest;
     button(offense, "continue").click();
@@ -80,7 +85,6 @@
     await until(function () { return ball._kp === 2; }, "drag to aim");
     await until(function () {
       var trajectory = guestGame.ExhibitionEngine.instances(78)[0];
-      output.textContent = checks.join("\n") + "\nAiming: " + JSON.stringify({ host: ball._kp, guest: trajectory && [trajectory._iL1, trajectory._9L1.length, trajectory._aL1.length, trajectory._bL1.length] });
       return trajectory && trajectory._iL1 > 0 && trajectory._9L1.length === 50 && trajectory._aL1.length === 50 && trajectory._bL1.length === 50;
     }, "mirror native aiming dots");
     check(true, "Preserve all native trajectory points on player two's screen");
@@ -98,7 +102,24 @@
     defenseGame.dispatchEvent(new defenseGame.KeyboardEvent("keyup", { key: "q", keyCode: 81, bubbles: true }));
     await until(function () { return hostGame.ExhibitionEngine.defender !== oldDefender; }, "switch defenders");
     check(true, "Switch defenders from the defensive client's keyboard");
+    point("pointerup", match._501 === 1 ? 0.3 : 0.9, 0.45);
+    await until(function () { return ball._kp === 3; }, "release a pass");
+    check(true, "Aim and throw using the offensive client's pointer input");
+    match._t11 = 1;
+    hostGame._eb1(match, match, 1);
+    match._kp = 2;
+    ball = hostGame.ExhibitionEngine.instances(hostGame.global._d01)[0];
+    hostGame.ExhibitionEngine.instances(73).forEach(function (player, index) { player.x = 400 + index * 20; player.y = 200; });
+    var carrier = hostGame.ExhibitionEngine.instances(74).find(function (player) { return player._O01 === 2; });
+    carrier.x = 1300;
+    carrier.y = 300;
+    hostGame._Z01(carrier, carrier, 2);
+    ball._kp = 5;
+    ball._X_ = carrier.id;
+    hostGame.ExhibitionEngine.switchDefender();
     defender = hostGame.ExhibitionEngine.instances(75).find(function (entry) { return entry.id === hostGame.ExhibitionEngine.defender; });
+    defender.x = 1600;
+    defender.y = 300;
     var initialY = defender.y;
     defenseGame.dispatchEvent(new defenseGame.KeyboardEvent("keydown", { key: "s", keyCode: 83, bubbles: true }));
     await until(function () { return defender.y > initialY + 2; }, "move the selected defender down");
@@ -108,9 +129,17 @@
     await until(function () { return defender.y < initialY - 2; }, "reverse the selected defender upward");
     defenseGame.dispatchEvent(new defenseGame.KeyboardEvent("keyup", { key: "w", keyCode: 87, bubbles: true }));
     check(true, "Move the selected defender down and back up through the network");
-    point("pointerup", match._501 === 1 ? 0.3 : 0.9, 0.45);
-    await until(function () { return ball._kp === 3; }, "release a pass");
-    check(true, "Aim and throw using the offensive client's pointer input");
+    var initialStrength = carrier._c81;
+    offenseGame.dispatchEvent(new offenseGame.KeyboardEvent("keydown", { key: "w", keyCode: 87, bubbles: true }));
+    await until(function () { return carrier._c81 < initialStrength * 0.99; }, "receive one offensive sidestep");
+    await new Promise(function (resolve) { setTimeout(resolve, 350); });
+    offenseGame.dispatchEvent(new offenseGame.KeyboardEvent("keyup", { key: "w", keyCode: 87, bubbles: true }));
+    check(carrier._c81 > initialStrength * 0.85, "Keep an offensive sidestep's strength while its key remains held");
+    var runnerY = carrier.y;
+    offenseGame.dispatchEvent(new offenseGame.KeyboardEvent("keydown", { key: "s", keyCode: 83, bubbles: true }));
+    offenseGame.dispatchEvent(new offenseGame.KeyboardEvent("keyup", { key: "s", keyCode: 83, bubbles: true }));
+    await until(function () { return carrier.y > runnerY + 3; }, "deliver a short offensive tap between input updates");
+    check(true, "Deliver a quick lateral tap through the network");
     check(JSON.stringify(Object.assign({}, localStorage)) === saves, "Preserve career saves during a network match");
     checks.push("Two-client checks passed" + (latency ? " at " + latency + " ms simulated RTT" : ""));
     output.textContent = checks.join("\n");

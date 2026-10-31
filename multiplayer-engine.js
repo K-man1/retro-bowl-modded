@@ -608,6 +608,24 @@
     onEvent({ type: "presentation", possession: snapshot.possession, score: snapshot.score, clock: snapshot.clock, prompt: prompt });
   }, 50);
 
+  var canvasSize = "";
+  function fitCanvas() {
+    var canvas = document.getElementById("canvas");
+    var size = [canvas.width, canvas.height, innerWidth, innerHeight].join(":");
+    if (size === canvasSize) return;
+    canvasSize = size;
+    var scale = Math.max(1, Math.floor(Math.min(innerWidth / canvas.width, innerHeight / canvas.height)));
+    var width = canvas.width * scale;
+    var height = canvas.height * scale;
+    canvas.style.setProperty("--canvas-width", width + "px");
+    canvas.style.setProperty("--canvas-height", height + "px");
+    canvas.style.setProperty("--canvas-left", Math.floor((innerWidth - width) / 2) + "px");
+    canvas.style.setProperty("--canvas-top", Math.floor((innerHeight - height) / 2) + "px");
+  }
+  new MutationObserver(fitCanvas).observe(document.getElementById("canvas"), { attributes: true, attributeFilter: ["width", "height"] });
+  window.addEventListener("resize", fitCanvas);
+  fitCanvas();
+
   window.addEventListener("load", async function () {
     try {
       var starter = await fetch("saves/starter.json").then(function (response) { if (!response.ok) throw new Error("Unable to load exhibition data"); return response.json(); });
