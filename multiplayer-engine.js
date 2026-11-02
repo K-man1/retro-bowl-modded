@@ -633,12 +633,15 @@
   var canvasSize = "";
   function fitCanvas() {
     var canvas = document.getElementById("canvas");
-    var size = [canvas.width, canvas.height, innerWidth, innerHeight].join(":");
+    // The game stretches its camera over a fixed 16:9 buffer, so the camera's aspect is the true picture shape.
+    // Guests mirror the host's camera, which letterboxes them to the host's aspect and keeps pointer fractions aligned.
+    var view = running && sceneReady ? camera() : [0, 0, canvas.width, canvas.height];
+    var size = [view[2], view[3], innerWidth, innerHeight].join(":");
     if (size === canvasSize) return;
     canvasSize = size;
-    var scale = Math.max(1, Math.floor(Math.min(innerWidth / canvas.width, innerHeight / canvas.height)));
-    var width = canvas.width * scale;
-    var height = canvas.height * scale;
+    var scale = Math.min(innerWidth / view[2], innerHeight / view[3]);
+    var width = Math.round(view[2] * scale);
+    var height = Math.round(view[3] * scale);
     canvas.style.setProperty("--canvas-width", width + "px");
     canvas.style.setProperty("--canvas-height", height + "px");
     canvas.style.setProperty("--canvas-left", Math.floor((innerWidth - width) / 2) + "px");
@@ -646,6 +649,7 @@
   }
   new MutationObserver(fitCanvas).observe(document.getElementById("canvas"), { attributes: true, attributeFilter: ["width", "height"] });
   window.addEventListener("resize", fitCanvas);
+  setInterval(fitCanvas, 250);
   fitCanvas();
 
   window.addEventListener("load", async function () {

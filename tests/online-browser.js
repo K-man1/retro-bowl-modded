@@ -87,10 +87,13 @@
     var hostGame = engineWindow(host);
     var guestGame = engineWindow(guest);
     var match = hostGame.ExhibitionEngine.match();
+    await new Promise(function (resolve) { setTimeout(resolve, 300); });
     [hostGame, guestGame].forEach(function (game) {
       var canvas = game.document.getElementById("canvas");
       var bounds = canvas.getBoundingClientRect();
-      check(Number.isInteger(bounds.width / canvas.width) && Number.isInteger(bounds.height / canvas.height) && Number.isInteger(bounds.x) && Number.isInteger(bounds.y), "Keep the game picture aligned to whole pixels at an odd window size");
+      var view = game._ft._ZA1[0];
+      var aspect = game._0B1(view) / game._2B1(view);
+      check(Math.abs(bounds.width / bounds.height - aspect) < 0.01 &&(bounds.width === game.innerWidth || bounds.height === game.innerHeight) && Number.isInteger(bounds.x) && Number.isInteger(bounds.y), "Fill the window with the undistorted camera picture at an odd window size");
     });
     check(guestGame.ExhibitionEngine.match()._UD === match._UD, "Synchronize initial possession");
     var offense = match._UD === 0 ? host : guest;
