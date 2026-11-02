@@ -52,7 +52,6 @@
   var receivedSnapshot = null;
   var networkCongested = false;
   var pressed = new Set();
-  var stick = new Set();
   var pointer = { x: 0.5, y: 0.5, down: false };
   var localActions = [];
   var actionId = 0;
@@ -591,7 +590,7 @@
 
   function collectInput() {
     if (!running || !sceneReady || paused || finished) return;
-    var input = { seq: inputSequence++, keys: Array.from(pressed).concat(Array.from(stick)), pointer: Object.assign({}, pointer), actions: localActions.splice(0) };
+    var input = { seq: inputSequence++, keys: Array.from(pressed), pointer: Object.assign({}, pointer), actions: localActions.splice(0) };
     if (mode === "host") setInput(localPlayer, input);
     onEvent({ type: "local-input", input: input });
   }
@@ -624,61 +623,6 @@
   });
   window.addEventListener("blur", function () { pressed.clear(); pointer.down = false; collectInput(); });
   setInterval(collectInput, 34);
-
-  // Defense is keyboard driven, so touch screens get a stick that holds arrow keys plus the two action keys.
-  var touchScreen = navigator.maxTouchPoints > 0;
-  var touchPad = document.getElementById("touch-pad");
-  var stickBase = document.getElementById("touch-stick");
-  var stickKnob = stickBase.firstElementChild;
-  var stickPointer = null;
-  function moveStick(event) {
-    var bounds = stickBase.getBoundingClientRect();
-    var radius = bounds.width / 2;
-    var dx = event.clientX - bounds.left - radius;
-    var dy = event.clientY - bounds.top - radius;
-    var length = Math.hypot(dx, dy);
-    var reach = Math.min(length, radius) / (length || 1);
-    stickKnob.style.transform = "translate(" + dx * reach + "px," + dy * reach + "px)";
-    var before = Array.from(stick).join();
-    stick.clear();
-    // A dead zone keeps a resting thumb from drifting the defender; cos 67.5deg splits the circle into eight directions.
-    if (length > radius * 0.3) {
-      if (dx / length > 0.38) stick.add(39);
-      if (dx / length < -0.38) stick.add(37);
-      if (dy / length > 0.38) stick.add(40);
-      if (dy / length < -0.38) stick.add(38);
-    }
-    if (Array.from(stick).join() !== before) collectInput();
-  }
-  function releaseStick() {
-    stickPointer = null;
-    stick.clear();
-    stickKnob.style.transform = "";
-    collectInput();
-  }
-  stickBase.addEventListener("pointerdown", function (event) {
-    if (stickPointer !== null) return;
-    stickPointer = event.pointerId;
-    stickBase.setPointerCapture(event.pointerId);
-    moveStick(event);
-  });
-  stickBase.addEventListener("pointermove", function (event) { if (event.pointerId === stickPointer) moveStick(event); });
-  ["pointerup", "pointercancel"].forEach(function (type) {
-    stickBase.addEventListener(type, function (event) { if (event.pointerId === stickPointer) releaseStick(); });
-  });
-  [["touch-switch", "switch"], ["touch-dive", "space"]].forEach(function (entry) {
-    document.getElementById(entry[0]).addEventListener("pointerdown", function (event) {
-      event.preventDefault();
-      localActions.push({ id: actionId++, type: entry[1] });
-      collectInput();
-    });
-  });
-  setInterval(function () {
-    var defending = touchScreen && running && sceneReady && !paused && !finished && (mode === "host" ? match()._UD : controller._5Q) !== localPlayer;
-    if (defending !== touchPad.hidden) return;
-    touchPad.hidden = !defending;
-    if (!defending && stickPointer !== null) releaseStick();
-  }, 100);
   setInterval(function () {
     if (!running || !sceneReady || mode !== "host" || paused || finished || networkCongested) return;
     var snapshot = captureSnapshot();

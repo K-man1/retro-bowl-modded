@@ -41,9 +41,9 @@
     '<div class="online-row"><label for="online-difficulty">DIFFICULTY<select id="online-difficulty"><option value="0">DYNAMIC</option><option value="1">EASY</option><option value="2" selected>MEDIUM</option><option value="3">HARD</option><option value="4">EXTREME</option></select></label>' +
     '<label for="online-minutes">QUARTER LENGTH<select id="online-minutes"><option value="1">1 MINUTE</option><option value="2" selected>2 MINUTES</option><option value="3">3 MINUTES</option></select></label></div>' +
     '<div id="online-players"></div><button id="online-ready" type="button">READY</button></div>' +
-    '<p>Defense: WASD / arrows to move, Q to switch, Space to dive. On a touch screen, use the stick, SWITCH and DIVE. Keep the creator’s game open.</p>' +
+    '<p>Defense: WASD / arrows to move, Q to switch, Space to dive. Keep the creator’s game open.</p>' +
     '<button id="online-close" type="button">BACK TO GAME</button></div>' +
-    '<div id="online-matchbar" hidden><button id="online-room-toggle" type="button">ROOM</button><div id="online-matchmenu" hidden><p id="online-role"></p><p>Defense: WASD / arrows or the touch stick, Q / SWITCH to switch, Space / DIVE to dive.</p><button id="online-continue" type="button">CONTINUE / SPACE</button> <button id="online-audible" type="button">AUDIBLE</button> <button id="online-timeout" type="button">TIMEOUT</button> <button id="online-leave" type="button">LEAVE</button></div></div>' +
+    '<div id="online-matchbar" hidden><button id="online-room-toggle" type="button">ROOM</button><div id="online-matchmenu" hidden><p id="online-role"></p><p>Defense: WASD / arrows, Q to switch, Space to dive.</p><button id="online-continue" type="button">CONTINUE / SPACE</button> <button id="online-audible" type="button">AUDIBLE</button> <button id="online-timeout" type="button">TIMEOUT</button> <button id="online-leave" type="button">LEAVE</button></div></div>' +
     '<div id="online-finish" hidden><h1 id="online-result">FINAL SCORE</h1><p id="online-score"></p><button id="online-rematch" type="button">REMATCH</button> <button id="online-exit" type="button">LEAVE</button></div>' +
     '<p id="online-status" role="status" aria-live="polite"></p>';
   document.body.appendChild(panel);
