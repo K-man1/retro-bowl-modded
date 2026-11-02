@@ -48,6 +48,7 @@
   var appliedTick = -1;
   var mirror = new Map();
   var snapshotBuffer = [];
+  var hostCamera = null;
   var pendingSnapshot = null;
   var receivedSnapshot = null;
   var networkCongested = false;
@@ -244,6 +245,15 @@
     var view = window._ft._ZA1[0];
     return [window._bB1(view), window._dB1(view), window._0B1(view), window._2B1(view)];
   }
+  // The guest keeps the host's camera height and centre but widens or narrows it to its own screen shape.
+  function showHostCamera(host) {
+    var view = window._ft._ZA1[0];
+    var roomWidth = window._Sc2._BQ2;
+    var width = Math.min(roomWidth, host[3] * Math.max(innerWidth, innerHeight) / Math.min(innerWidth, innerHeight));
+    hostCamera = host;
+    window._eB1(view, Math.max(0, Math.min(roomWidth - width, host[0] + (host[2] - width) / 2)), host[1]);
+    window._YA1(view, width, host[3]);
+  }
   function presentation(instance) {
     var fields = {};
     var keys = new Set(Object.keys(instance));
@@ -287,9 +297,7 @@
         if (Number.isFinite(entity.fields.x)) instance.x = entity.fields.x;
         if (Number.isFinite(entity.fields.y)) instance.y = entity.fields.y;
       });
-      var currentView = window._ft._ZA1[0];
-      window._eB1(currentView, snapshot.camera[0], snapshot.camera[1]);
-      window._YA1(currentView, snapshot.camera[2], snapshot.camera[3]);
+      showHostCamera(snapshot.camera);
       return;
     }
     appliedTick = snapshot.tick;
@@ -340,9 +348,7 @@
       }
       if (entity.type === 77) window.global._d01 = instance.id;
     });
-    var view = window._ft._ZA1[0];
-    window._eB1(view, snapshot.camera[0], snapshot.camera[1]);
-    window._YA1(view, snapshot.camera[2], snapshot.camera[3]);
+    showHostCamera(snapshot.camera);
     selectedDefender = snapshot.defender;
     prompt = snapshot.prompt;
     onEvent({ type: "presentation", possession: snapshot.possession, score: snapshot.score, clock: snapshot.clock, prompt: snapshot.prompt });
@@ -376,10 +382,7 @@
         if (Number.isFinite(before.fields[key]) && Number.isFinite(entity.fields[key])) instance[key] = before.fields[key] + (entity.fields[key] - before.fields[key]) * blend;
       });
     });
-    var view = window._ft._ZA1[0];
-    var position = later.snapshot.camera.map(function (coordinate, index) { return earlier.snapshot.camera[index] + (coordinate - earlier.snapshot.camera[index]) * blend; });
-    window._eB1(view, position[0], position[1]);
-    window._YA1(view, position[2], position[3]);
+    showHostCamera(later.snapshot.camera.map(function (coordinate, index) { return earlier.snapshot.camera[index] + (coordinate - earlier.snapshot.camera[index]) * blend; }));
   }
   function offensiveInput() {
     var side = match()._UD;
@@ -501,7 +504,12 @@
     window._o01 = function (device) { return running && sceneReady ? offensiveInput().pointer.y * window._NF() : nativeMouseY(device); };
     var nativeWorldX = window._N53;
     var nativeWorldY = window._O53;
-    window._N53 = function () { var view = running && sceneReady ? camera() : null; return view ? view[0] + offensiveInput().pointer.x * view[2] : nativeWorldX(); };
+    window._N53 = function () {
+      var view = running && sceneReady ? camera() : null;
+      if (!view) return nativeWorldX();
+      var mouse = offensiveInput().pointer;
+      return view[0] + (mouse.hostX === undefined ? mouse.x : mouse.hostX) * view[2];
+    };
     window._O53 = function () { var view = running && sceneReady ? camera() : null; return view ? view[1] + offensiveInput().pointer.y * view[3] : nativeWorldY(); };
     var drawTiledSprite = window._SI1;
     window._SI1 = function (instance, sprite) {
@@ -528,7 +536,7 @@
         while (taps.length && !framePressed.has(taps[0])) framePressed.add(taps.shift());
         // A click can begin and end between two network packets. Present each edge to the engine.
         var edge = pointerEdges[match()._UD].shift();
-        if (edge) inputs[match()._UD].pointer = { x: edge.x, y: edge.y, down: edge.down };
+        if (edge) inputs[match()._UD].pointer = { x: edge.x, y: edge.y, hostX: edge.hostX, down: edge.down };
         mouseReleased = lastMouseDown && !offensiveInput().pointer.down;
         lastMouseDown = offensiveInput().pointer.down;
         if (!paused && !finished) handleActions();
@@ -615,9 +623,14 @@
       var bounds = event.target.getBoundingClientRect();
       pointer.x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
       pointer.y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+      // Overlays use the shared GUI space, but aiming happens in the world, where the guest sees a different width.
+      if (mode === "guest" && hostCamera) {
+        var view = camera();
+        pointer.hostX = (view[0] + pointer.x * view[2] - hostCamera[0]) / hostCamera[2];
+      }
       if (type === "pointerdown") { pointer.down = true; event.target.setPointerCapture(event.pointerId); }
       if (type === "pointerup") pointer.down = false;
-      if (type !== "pointermove") localActions.push({ id: actionId++, type: "pointer", x: pointer.x, y: pointer.y, down: pointer.down });
+      if (type !== "pointermove") localActions.push({ id: actionId++, type: "pointer", x: pointer.x, y: pointer.y, hostX: pointer.hostX, down: pointer.down });
       if (type !== "pointermove") collectInput();
     }, true);
   });
@@ -634,7 +647,6 @@
   function fitCanvas() {
     var canvas = document.getElementById("canvas");
     // The game stretches its camera over a fixed 16:9 buffer, so the camera's aspect is the true picture shape.
-    // Guests mirror the host's camera, which letterboxes them to the host's aspect and keeps pointer fractions aligned.
     var view = running && sceneReady ? camera() : [0, 0, canvas.width, canvas.height];
     var size = [view[2], view[3], innerWidth, innerHeight].join(":");
     if (size === canvasSize) return;
@@ -657,6 +669,10 @@
       var starter = await fetch("saves/starter.json").then(function (response) { if (!response.ok) throw new Error("Unable to load exhibition data"); return response.json(); });
       Object.assign(memory, starter.localStorage);
       if (careerSave) memory["RetroBowl.0.savedata.ini"] = careerSave;
+      // The game fixes its camera shape from the browser size once at boot, and a portrait shape leaves a sliver of
+      // field that the guest also inherits. Report the landscape orientation so rotating the phone only rescales.
+      window._FX = function () { return Math.max(innerWidth, innerHeight); };
+      window._HX = function () { return Math.min(innerWidth, innerHeight); };
       window.GameMaker_Init();
       var booted = false;
       var poll = setInterval(function () {

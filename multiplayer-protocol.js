@@ -46,19 +46,21 @@
       return player;
     }) };
   }
+  // A guest's view can be wider or narrower than the host's, so its aim may fall outside the host's camera.
+  function hostX(value) { return value === undefined || Number.isFinite(value) && value >= -2 && value <= 3; }
   function input(candidate) {
     if (!candidate || !Number.isSafeInteger(candidate.seq) || candidate.seq < 0 || !Array.isArray(candidate.keys) || candidate.keys.length > keys.length || candidate.keys.some(function (key) { return !keys.includes(key); })) throw new Error("Invalid player input.");
     var pointer = candidate.pointer;
-    if (!pointer || !Number.isFinite(pointer.x) || !Number.isFinite(pointer.y) || pointer.x < 0 || pointer.x > 1 || pointer.y < 0 || pointer.y > 1 || typeof pointer.down !== "boolean") throw new Error("Invalid pointer input.");
+    if (!pointer || !Number.isFinite(pointer.x) || !Number.isFinite(pointer.y) || pointer.x < 0 || pointer.x > 1 || pointer.y < 0 || pointer.y > 1 || !hostX(pointer.hostX) || typeof pointer.down !== "boolean") throw new Error("Invalid pointer input.");
     var actions = candidate.actions || [];
     if (!Array.isArray(actions) || actions.length > 12) throw new Error("Too many actions.");
     actions.forEach(function (action) {
       if (!action || !Number.isSafeInteger(action.id) || action.id < 0 || !["switch", "space", "choice", "audible", "timeout", "pointer", "key"].includes(action.type)) throw new Error("Invalid player action.");
       if (action.type === "key" && (!keys.includes(action.code) || action.code === 32)) throw new Error("Invalid key action.");
       if (action.type === "choice" && (!Number.isSafeInteger(action.prompt) || ![0, 1].includes(action.choice))) throw new Error("Invalid choice.");
-      if (action.type === "pointer" && (typeof action.down !== "boolean" || !Number.isFinite(action.x) || !Number.isFinite(action.y) || action.x < 0 || action.x > 1 || action.y < 0 || action.y > 1)) throw new Error("Invalid pointer action.");
+      if (action.type === "pointer" && (typeof action.down !== "boolean" || !Number.isFinite(action.x) || !Number.isFinite(action.y) || action.x < 0 || action.x > 1 || action.y < 0 || action.y > 1 || !hostX(action.hostX))) throw new Error("Invalid pointer action.");
     });
-    return { seq: candidate.seq, keys: Array.from(new Set(candidate.keys)), pointer: { x: pointer.x, y: pointer.y, down: pointer.down }, actions: actions };
+    return { seq: candidate.seq, keys: Array.from(new Set(candidate.keys)), pointer: { x: pointer.x, y: pointer.y, hostX: pointer.hostX, down: pointer.down }, actions: actions };
   }
   function snapshotDelta(snapshot, previous) {
     if (!previous) return snapshot;

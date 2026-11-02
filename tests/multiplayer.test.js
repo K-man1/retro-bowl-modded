@@ -100,9 +100,13 @@ test("preserve short pointer clicks and reject invalid pointer actions", () => {
     { id: 2, type: "pointer", x: 0.4, y: 0.6, down: false }
   ] };
   assert.deepEqual(protocol.input(input).actions, input.actions);
-  for (const invalid of [{ x: -1 }, { y: Infinity }, { down: 1 }]) {
+  for (const invalid of [{ x: -1 }, { y: Infinity }, { down: 1 }, { hostX: NaN }, { hostX: 9 }]) {
     assert.throws(() => protocol.input({ ...input, actions: [{ ...input.actions[0], ...invalid }] }), /pointer/);
   }
+  // A wider guest can aim past the edge of the host's camera.
+  const wide = { ...input, pointer: { x: 0.02, y: 0.5, hostX: -0.2, down: true } };
+  assert.equal(protocol.input(wide).pointer.hostX, -0.2);
+  assert.throws(() => protocol.input({ ...wide, pointer: { ...wide.pointer, hostX: "0.5" } }), /pointer/);
 });
 
 test("relay offensive taps separately from held defensive directions", () => {

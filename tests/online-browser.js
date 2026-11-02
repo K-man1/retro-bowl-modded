@@ -113,8 +113,14 @@
     var ball = hostGame.ExhibitionEngine.instances(hostGame.global._d01)[0];
     point("pointerdown", 0.6, 0.5);
     await until(function () { return ball._kp === 1; }, "begin aiming from the offensive client");
-    point("pointermove", match._501 === 1 ? 0.3 : 0.9, 0.45);
+    var aimX = match._501 === 1 ? 0.3 : 0.9;
+    point("pointermove", aimX, 0.45);
     await until(function () { return ball._kp === 2; }, "drag to aim");
+    await until(function () {
+      var view = offenseGame._ft._ZA1[0];
+      return Math.abs(hostGame._N53() - (offenseGame._bB1(view) + aimX * offenseGame._0B1(view))) < 24;
+    }, "aim at the field point under the offensive client's pointer");
+    check(true, "Aim at the field point under the offensive client's pointer, whatever its screen shape");
     await until(function () {
       var trajectory = guestGame.ExhibitionEngine.instances(78)[0];
       return trajectory && trajectory._iL1 > 0 && trajectory._9L1.length === 50 && trajectory._aL1.length === 50 && trajectory._bL1.length === 50;
